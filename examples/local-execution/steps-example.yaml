@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: steps-example-local
+spec:
+  entrypoint: main
+  templates:
+  - name: main
+    steps:
+    - - name: step1
+        template: echo-step
+    - - name: step2a
+        template: echo-step
+      - name: step2b
+        template: echo-step
+    - - name: step3
+        template: echo-step
+
+  - name: echo-step
+    container:
+      image: alpine:latest
+      command: [echo]
+      args: ["Executing step"]
