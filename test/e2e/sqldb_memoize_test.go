@@ -145,7 +145,7 @@ func (s *SQLDBMemoizeSuite) assertDBCacheEntry(ctx context.Context, key string) 
 // assertNoConfigMap verifies the controller did NOT fall back to creating a ConfigMap cache.
 func (s *SQLDBMemoizeSuite) assertNoConfigMap(ctx context.Context, name string) {
 	_, err := s.KubeClient.CoreV1().ConfigMaps(fixtures.Namespace).Get(ctx, name, metav1.GetOptions{})
-	assert.NotEqual(s.T(), err, nil, "ConfigMap %q should not exist when SQL memoization is configured", name)
+	s.Error(err, "ConfigMap %q should not exist when SQL memoization is configured", name)
 }
 
 func TestSQLDBMemoizeSuite(t *testing.T) {
