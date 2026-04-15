@@ -14,16 +14,73 @@ If you are using workflows prior to version 3.5 you should look at the [work avo
 
 In version 3.5 or later all steps can be memoized, whether or not they have outputs.
 
-## Cache Method
+## Cache Backends
 
-Currently, the cached data is stored in config-maps.
+Argo Workflows supports two backends for storing memoization cache entries:
+
+### ConfigMap (default)
+
+By default, cached data is stored in Kubernetes ConfigMaps.
 This allows you to easily manipulate cache entries manually through `kubectl` and the Kubernetes API without having to go through Argo.
-All cache config-maps must have the label `workflows.argoproj.io/configmap-type: Cache` to be used as a cache. This prevents accidental access to other important config-maps in the system
+All cache ConfigMaps must have the label `workflows.argoproj.io/configmap-type: Cache` to be used as a cache. This prevents accidental access to other important ConfigMaps in the system.
+
+### SQL Database
+
+> v4.0 and after
+
+Alternatively, cache entries can be stored in a PostgreSQL or MySQL database. This pattern optimizes for long-term persistence and scalability.
+
+To enable SQL-backed memoization, add a `memoization` block to the `workflow-controller-configmap`:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workflow-controller-configmap
+  namespace: argo
+data:
+  memoization: |
+    postgresql:
+      host: postgres
+      port: 5432
+      database: postgres
+      tableName: memoization_cache
+      userNameSecret:
+        name: argo-postgres-config
+        key: username
+      passwordSecret:
+        name: argo-postgres-config
+        key: password
+    cacheTTL: "2160h"
+```
+
+The `cacheTTL` field controls how long cache entries that have not been accessed are retained.
+It defaults to `"2160h"` (90 days). Set to `"0"` to disable automatic pruning.
+
+!!! Note
+    The workflow spec continues to reference a `configMap.name` in the `memoize.cache` field — this value is used as a logical cache group name in the database, not as a Kubernetes ConfigMap. No ConfigMap is created when the SQL backend is configured.
+
+MySQL is also supported:
+
+```yaml
+  memoization: |
+    mysql:
+      host: mysql
+      port: 3306
+      database: argo
+      tableName: memoization_cache
+      userNameSecret:
+        name: argo-mysql-config
+        key: username
+      passwordSecret:
+        name: argo-mysql-config
+        key: password
+```
 
 ## Using Memoization
 
 Memoization is set at the template level. You must specify a `key`, which can be static strings but more often depend on inputs.
-You must also specify a name for the `config-map` cache.
+You must also specify a name for the `cache` (used as a ConfigMap name, or as a logical group name when using the SQL backend).
 Optionally you can set a `maxAge` in seconds or hours (e.g. `180s`, `24h`) to define how long should it be considered valid. If an entry is older than the `maxAge`, it will be ignored.
 
 ```yaml
@@ -46,7 +103,7 @@ spec:
 [Find a simple example for memoization here](https://github.com/argoproj/argo-workflows/blob/main/examples/memoize-simple.yaml).
 
 !!! Note
-    In order to use memoization it is necessary to add the verbs `create` and `update` to the `configmaps` resource for the appropriate (cluster) roles. In the case of a cluster install the `argo-cluster-role` cluster role should be updated, whilst for a namespace install the `argo-role` role should be updated.
+    In order to use memoization with the ConfigMap backend it is necessary to add the verbs `create` and `update` to the `configmaps` resource for the appropriate (cluster) roles. In the case of a cluster install the `argo-cluster-role` cluster role should be updated, whilst for a namespace install the `argo-role` role should be updated. This is not required when using the SQL database backend.
 
 ## FAQ
 
@@ -56,5 +113,6 @@ spec:
     * Delete the existing `ConfigMap` cache or switch to use a different cache.
     * Reduce the size of the output parameters for the nodes that are being memoized.
     * Split your cache into different memoization keys and cache names so that each cache entry is small.
+    * Switch to the SQL database backend which has no size limit.
 1. My step isn't getting memoized, why not?
    If you are running workflows <3.5 ensure that you have specified at least one output on the step.

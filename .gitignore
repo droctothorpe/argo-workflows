@@ -57,3 +57,5 @@ result
 .*-vendor
 proto_vendor
 .github.com
+
+manifests/quick-start/local-dev

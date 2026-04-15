@@ -13,6 +13,7 @@ import (
 	persist "github.com/argoproj/argo-workflows/v4/persist/sqldb"
 	"github.com/argoproj/argo-workflows/v4/util/instanceid"
 	"github.com/argoproj/argo-workflows/v4/util/logging"
+	memodb "github.com/argoproj/argo-workflows/v4/util/memo/db"
 	"github.com/argoproj/argo-workflows/v4/util/sqldb"
 	"github.com/argoproj/argo-workflows/v4/workflow/artifactrepositories"
 	"github.com/argoproj/argo-workflows/v4/workflow/hydrator"
@@ -76,6 +77,21 @@ func (wfc *WorkflowController) updateConfig(ctx context.Context) error {
 		}
 	} else {
 		logger.Info(ctx, "Persistence configuration disabled")
+	}
+
+	if memoCfg := wfc.Config.Memoization; memoCfg != nil {
+		logger.Info(ctx, "Memoization database configuration enabled")
+		if wfc.memoSessionProxy == nil {
+			sp := memodb.SessionProxyFromConfig(ctx, wfc.kubeclientset, wfc.namespace, memoCfg)
+			wfc.memoSessionProxy = sp
+		}
+		if wfc.memoSessionProxy != nil {
+			cfg := memodb.ConfigFromConfig(memoCfg)
+			memodb.Migrate(ctx, wfc.memoSessionProxy, cfg)
+			wfc.cacheFactory.SetSessionProxy(wfc.memoSessionProxy, cfg.TableName)
+		}
+	} else {
+		logger.Info(ctx, "Memoization database configuration disabled; using ConfigMap-based caching")
 	}
 
 	wfc.hydrator = hydrator.New(wfc.offloadNodeStatusRepo)

@@ -121,6 +121,10 @@ type Config struct {
 	// Synchronization via databases config
 	Synchronization *SyncConfig `json:"synchronization,omitempty"`
 
+	// Memoization configures memoization cache storage. When set, cache entries are stored in a
+	// database instead of ConfigMaps. ConfigMap-based caching remains the default when omitted.
+	Memoization *MemoizationConfig `json:"memoization,omitempty"`
+
 	// ArtifactDrivers lists artifact driver plugins we can use
 	ArtifactDrivers []ArtifactDriver `json:"artifactDrivers,omitempty"`
 
@@ -351,6 +355,20 @@ type SyncConfig struct {
 	// SemaphoreLimitCacheSeconds specifies the duration in seconds before the workflow controller will re-fetch the limit
 	// for a semaphore from its associated data source. Defaults to 0 seconds (re-fetch every time the semaphore is checked).
 	SemaphoreLimitCacheSeconds *int64 `json:"semaphoreLimitCacheSeconds,omitempty"`
+}
+
+// MemoizationConfig contains memoization cache configuration for database-backed storage.
+// When configured, cache entries are stored in the specified database table instead of ConfigMaps.
+type MemoizationConfig struct {
+	DBConfig
+	// TableName is the name of the table to use for memoization cache entries.
+	// Defaults to "memoization_cache" if not set.
+	TableName string `json:"tableName,omitempty"`
+	// SkipMigration skips automatic database migration on startup.
+	SkipMigration bool `json:"skipMigration,omitempty"`
+	// CacheTTL is the duration after which cache entries that have not been hit are deleted by the
+	// garbage collector. Defaults to "2160h" (90 days). Set to "0" to disable GC.
+	CacheTTL TTL `json:"cacheTTL,omitempty"`
 }
 
 // ConnectionPool contains database connection pool settings

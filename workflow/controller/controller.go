@@ -46,6 +46,7 @@ import (
 	"github.com/argoproj/argo-workflows/v4/util/deprecation"
 	"github.com/argoproj/argo-workflows/v4/util/env"
 	"github.com/argoproj/argo-workflows/v4/util/errors"
+	memodb "github.com/argoproj/argo-workflows/v4/util/memo/db"
 	rbacutil "github.com/argoproj/argo-workflows/v4/util/rbac"
 	"github.com/argoproj/argo-workflows/v4/util/retry"
 	utilsqldb "github.com/argoproj/argo-workflows/v4/util/sqldb"
@@ -134,6 +135,7 @@ type WorkflowController struct {
 	throttler             sync.Throttler
 	workflowKeyLock       syncpkg.KeyLock // used to lock workflows for exclusive modification or access
 	sessionProxy          *utilsqldb.SessionProxy
+	memoSessionProxy      *utilsqldb.SessionProxy
 	offloadNodeStatusRepo sqldb.OffloadNodeStatusRepo
 	hydrator              hydrator.Interface
 	wfArchive             sqldb.WorkflowArchive
@@ -404,6 +406,7 @@ func (wfc *WorkflowController) Run(ctx context.Context, wfWorkers, workflowTTLWo
 
 	go wfc.workflowGarbageCollector(ctx)
 	go wfc.archivedWorkflowGarbageCollector(ctx)
+	go wfc.memoizationCacheGarbageCollector(ctx)
 
 	go wfc.runGCcontroller(ctx, workflowTTLWorkers)
 	go wfc.runCronController(ctx, cronWorkflowWorkers)
@@ -716,6 +719,52 @@ func (wfc *WorkflowController) archivedWorkflowGarbageCollector(ctx context.Cont
 			err := wfc.wfArchive.DeleteExpiredWorkflows(ctx, time.Duration(ttl))
 			if err != nil {
 				logger.WithField("err", err).Error(ctx, "Failed to delete archived workflows")
+			}
+		}
+	}
+}
+
+func (wfc *WorkflowController) memoizationCacheGarbageCollector(ctx context.Context) {
+	defer runtimeutil.HandleCrashWithContext(ctx, runtimeutil.PanicHandlers...)
+
+	logger := logging.RequireLoggerFromContext(ctx)
+	logger = logger.WithField("component", "memo_cache_garbage_collector")
+	ctx = logging.WithLogger(ctx, logger)
+
+	memoCfg := wfc.Config.Memoization
+	if memoCfg == nil || wfc.memoSessionProxy == nil {
+		logger.Info(ctx, "Memoization DB not configured - cache GC disabled")
+		return
+	}
+
+	const defaultCacheTTL = 90 * 24 * time.Hour // 3 months
+	ttl := time.Duration(memoCfg.CacheTTL)
+	if ttl == 0 {
+		ttl = defaultCacheTTL
+	}
+	if ttl < 0 {
+		logger.Info(ctx, "Memoization cache TTL is negative - cache GC disabled")
+		return
+	}
+
+	periodicity := env.LookupEnvDurationOr(ctx, "MEMO_CACHE_GC_PERIOD", 24*time.Hour)
+	logger.WithFields(logging.Fields{"ttl": ttl, "periodicity": periodicity}).Info(ctx, "Starting memoization cache GC")
+
+	ticker := time.NewTicker(periodicity)
+	defer ticker.Stop()
+	cfg := memodb.ConfigFromConfig(memoCfg)
+	queries := memodb.NewQueries(cfg.TableName)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			logger.Info(ctx, "Performing memoization cache GC")
+			n, err := queries.Prune(ctx, wfc.memoSessionProxy, ttl)
+			if err != nil {
+				logger.WithError(err).Error(ctx, "Failed to prune memoization cache")
+			} else {
+				logger.WithField("deleted", n).Info(ctx, "Memoization cache GC complete")
 			}
 		}
 	}
