@@ -21,5 +21,6 @@ func migrate(ctx context.Context, session db.Session, dbType sqldb.DBType, table
     primary key (namespace, cache_name, key)
 )`),
 		sqldb.AnsiSQLChange(`create index if not exists imemo_namespace_cache on ` + tableName + ` (namespace, cache_name)`),
+		sqldb.AnsiSQLChange(`create index if not exists imemo_last_hit_at on ` + tableName + ` (last_hit_at)`),
 	})
 }
