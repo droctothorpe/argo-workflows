@@ -1,12 +1,10 @@
 package db
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/upper/db/v4"
@@ -14,8 +12,6 @@ import (
 	wfv1 "github.com/argoproj/argo-workflows/v4/pkg/apis/workflow/v1alpha1"
 	"github.com/argoproj/argo-workflows/v4/util/sqldb"
 )
-
-const postgresNullReplacement = "ARGO_POSTGRES_NULL_REPLACEMENT"
 
 // CacheRecord is the database row for a single memoization cache entry.
 type CacheRecord struct {
@@ -87,9 +83,6 @@ func (q *Queries) Load(ctx context.Context, sp *sqldb.SessionProxy, namespace, c
 		r.LastHitAt = now
 	}
 
-	if q.dbType == sqldb.Postgres {
-		r.Outputs = strings.ReplaceAll(r.Outputs, postgresNullReplacement, "\\u0000")
-	}
 	return &r, nil
 }
 
@@ -118,9 +111,6 @@ func (q *Queries) Save(ctx context.Context, sp *sqldb.SessionProxy, namespace, c
 		return fmt.Errorf("unable to marshal memoization outputs: %w", err)
 	}
 	outputsStr := string(outputsJSON)
-	if q.dbType == sqldb.Postgres {
-		outputsStr = string(bytes.ReplaceAll([]byte(outputsStr), []byte("\\u0000"), []byte(postgresNullReplacement)))
-	}
 	now := time.Now()
 	return sp.With(ctx, func(sess db.Session) error {
 		switch q.dbType {
