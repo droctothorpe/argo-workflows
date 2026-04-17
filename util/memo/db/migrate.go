@@ -21,24 +21,22 @@ func migrate(ctx context.Context, session db.Session, dbType sqldb.DBType, table
 		// Postgres: use double-quotes around "key" and text (no size limit).
 		sqldb.ByType(dbType, sqldb.TypedChanges{
 			sqldb.Postgres: sqldb.AnsiSQLChange(`create table if not exists ` + tableName + ` (
-    namespace   varchar(256) not null,
     cache_name  varchar(256) not null,
     "key"       varchar(256) not null,
     node_id     text         not null,
     outputs     text         not null,
     created_at  timestamp    not null,
     last_hit_at timestamp    not null,
-    primary key (namespace, cache_name, "key")
+    primary key (cache_name, "key")
 )`),
 			sqldb.MySQL: sqldb.AnsiSQLChange("create table if not exists " + tableName + " (" +
-				"namespace   varchar(256) not null, " +
 				"cache_name  varchar(256) not null, " +
 				"`key`       varchar(256) not null, " +
 				"node_id     text         not null, " +
 				"outputs     longtext     not null, " +
 				"created_at  timestamp    not null, " +
 				"last_hit_at timestamp    not null, " +
-				"primary key (namespace, cache_name, `key`))"),
+				"primary key (cache_name, `key`))"),
 		}),
 		sqldb.AnsiSQLChange(`create index imemo_last_hit_at on ` + tableName + ` (last_hit_at)`),
 	})

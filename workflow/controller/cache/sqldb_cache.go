@@ -13,15 +13,13 @@ import (
 )
 
 type sqlDBCache struct {
-	namespace    string
 	name         string
 	sessionProxy *sqldb.SessionProxy
 	queries      *memodb.Queries
 }
 
-func newSQLDBCache(namespace string, name string, sp *sqldb.SessionProxy, tableName string) MemoizationCache {
+func newSQLDBCache(name string, sp *sqldb.SessionProxy, tableName string) MemoizationCache {
 	return &sqlDBCache{
-		namespace:    namespace,
 		name:         name,
 		sessionProxy: sp,
 		queries:      memodb.NewQueries(tableName, sp.DBType()),
@@ -32,7 +30,7 @@ func (c *sqlDBCache) Load(ctx context.Context, key string) (*Entry, error) {
 	if !cacheKeyRegex.MatchString(key) {
 		return nil, fmt.Errorf("invalid cache key: %s", key)
 	}
-	record, err := c.queries.Load(ctx, c.sessionProxy, c.namespace, c.name, key)
+	record, err := c.queries.Load(ctx, c.sessionProxy, c.name, key)
 	if err != nil {
 		return nil, fmt.Errorf("memoization db load failed: %w", err)
 	}
@@ -55,5 +53,5 @@ func (c *sqlDBCache) Save(ctx context.Context, key string, nodeID string, value 
 	if !cacheKeyRegex.MatchString(key) {
 		return fmt.Errorf("invalid cache key: %s", key)
 	}
-	return c.queries.Save(ctx, c.sessionProxy, c.namespace, c.name, key, nodeID, value)
+	return c.queries.Save(ctx, c.sessionProxy, c.name, key, nodeID, value)
 }

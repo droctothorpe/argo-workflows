@@ -27,7 +27,6 @@ const (
 	testDBUser     = "user"
 	testDBPassword = "pass"
 	testTableName  = "memoization_cache"
-	testNamespace  = "default"
 	testCacheName  = "my-cache"
 )
 
@@ -152,13 +151,13 @@ func TestQueriesSaveAndLoad(t *testing.T) {
 	q := memodb.NewQueries(testTableName, sqldb.Postgres)
 
 	// Load returns nil when no entry exists.
-	rec, err := q.Load(ctx, sp, testNamespace, testCacheName, "key1")
+	rec, err := q.Load(ctx, sp, testCacheName, "key1")
 	require.NoError(t, err)
 	assert.Nil(t, rec, "expected nil for missing key")
 
 	// Save an entry and load it back.
-	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "key1", "node-abc", sampleOutputs("hello")))
-	rec, err = q.Load(ctx, sp, testNamespace, testCacheName, "key1")
+	require.NoError(t, q.Save(ctx, sp, testCacheName, "key1", "node-abc", sampleOutputs("hello")))
+	rec, err = q.Load(ctx, sp, testCacheName, "key1")
 	require.NoError(t, err)
 	require.NotNil(t, rec)
 	assert.Equal(t, "node-abc", rec.NodeID)
@@ -170,15 +169,15 @@ func TestQueriesLoadDebounceLastHitAt(t *testing.T) {
 	sp := setupPostgres(ctx, t)
 	q := memodb.NewQueries(testTableName, sqldb.Postgres)
 
-	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "key2", "node-1", sampleOutputs("v1")))
+	require.NoError(t, q.Save(ctx, sp, testCacheName, "key2", "node-1", sampleOutputs("v1")))
 
-	first, err := q.Load(ctx, sp, testNamespace, testCacheName, "key2")
+	first, err := q.Load(ctx, sp, testCacheName, "key2")
 	require.NoError(t, err)
 	require.NotNil(t, first)
 
 	// A second Load immediately after should NOT update last_hit_at (debounce).
 	time.Sleep(50 * time.Millisecond)
-	second, err := q.Load(ctx, sp, testNamespace, testCacheName, "key2")
+	second, err := q.Load(ctx, sp, testCacheName, "key2")
 	require.NoError(t, err)
 	require.NotNil(t, second)
 	assert.Equal(t, first.LastHitAt, second.LastHitAt,
@@ -187,11 +186,11 @@ func TestQueriesLoadDebounceLastHitAt(t *testing.T) {
 	// Backdate last_hit_at by 2 hours so it exceeds the debounce interval, then verify Load refreshes it.
 	staleTime := time.Now().Add(-2 * time.Hour)
 	_, err = sp.Session().SQL().ExecContext(ctx,
-		"UPDATE "+testTableName+" SET last_hit_at = $1 WHERE namespace = $2 AND cache_name = $3 AND \"key\" = $4",
-		staleTime, testNamespace, testCacheName, "key2")
+		"UPDATE "+testTableName+" SET last_hit_at = $1 WHERE cache_name = $2 AND \"key\" = $3",
+		staleTime, testCacheName, "key2")
 	require.NoError(t, err)
 
-	refreshed, err := q.Load(ctx, sp, testNamespace, testCacheName, "key2")
+	refreshed, err := q.Load(ctx, sp, testCacheName, "key2")
 	require.NoError(t, err)
 	require.NotNil(t, refreshed)
 	assert.True(t, refreshed.LastHitAt.After(staleTime),
@@ -203,10 +202,10 @@ func TestQueriesSaveReplaces(t *testing.T) {
 	sp := setupPostgres(ctx, t)
 	q := memodb.NewQueries(testTableName, sqldb.Postgres)
 
-	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "key3", "node-old", sampleOutputs("old")))
-	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "key3", "node-new", sampleOutputs("new")))
+	require.NoError(t, q.Save(ctx, sp, testCacheName, "key3", "node-old", sampleOutputs("old")))
+	require.NoError(t, q.Save(ctx, sp, testCacheName, "key3", "node-new", sampleOutputs("new")))
 
-	rec, err := q.Load(ctx, sp, testNamespace, testCacheName, "key3")
+	rec, err := q.Load(ctx, sp, testCacheName, "key3")
 	require.NoError(t, err)
 	require.NotNil(t, rec)
 	assert.Equal(t, "node-new", rec.NodeID)
@@ -219,8 +218,8 @@ func TestQueriesPruneRemovesOldEntries(t *testing.T) {
 	q := memodb.NewQueries(testTableName, sqldb.Postgres)
 
 	// Save two entries.
-	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "old-key", "node-old", sampleOutputs("old")))
-	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "new-key", "node-new", sampleOutputs("new")))
+	require.NoError(t, q.Save(ctx, sp, testCacheName, "old-key", "node-old", sampleOutputs("old")))
+	require.NoError(t, q.Save(ctx, sp, testCacheName, "new-key", "node-new", sampleOutputs("new")))
 
 	// Backdate old-key's last_hit_at to 10 days ago.
 	_, err := sp.Session().SQL().
@@ -232,11 +231,11 @@ func TestQueriesPruneRemovesOldEntries(t *testing.T) {
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, n, "expected exactly one row pruned")
 
-	old, err := q.Load(ctx, sp, testNamespace, testCacheName, "old-key")
+	old, err := q.Load(ctx, sp, testCacheName, "old-key")
 	require.NoError(t, err)
 	assert.Nil(t, old, "old entry should have been pruned")
 
-	fresh, err := q.Load(ctx, sp, testNamespace, testCacheName, "new-key")
+	fresh, err := q.Load(ctx, sp, testCacheName, "new-key")
 	require.NoError(t, err)
 	assert.NotNil(t, fresh, "new entry should still exist")
 }
@@ -246,7 +245,7 @@ func TestQueriesPruneKeepsRecentEntries(t *testing.T) {
 	sp := setupPostgres(ctx, t)
 	q := memodb.NewQueries(testTableName, sqldb.Postgres)
 
-	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "recent", "node-1", sampleOutputs("v1")))
+	require.NoError(t, q.Save(ctx, sp, testCacheName, "recent", "node-1", sampleOutputs("v1")))
 
 	// All entries are recent — nothing should be pruned.
 	n, err := q.Prune(ctx, sp, 90*24*time.Hour)
@@ -261,12 +260,12 @@ func TestMySQLSaveAndLoad(t *testing.T) {
 	sp := setupMySQL(ctx, t)
 	q := memodb.NewQueries(testTableName, sqldb.MySQL)
 
-	rec, err := q.Load(ctx, sp, testNamespace, testCacheName, "key1")
+	rec, err := q.Load(ctx, sp, testCacheName, "key1")
 	require.NoError(t, err)
 	assert.Nil(t, rec, "expected nil for missing key")
 
-	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "key1", "node-abc", sampleOutputs("hello")))
-	rec, err = q.Load(ctx, sp, testNamespace, testCacheName, "key1")
+	require.NoError(t, q.Save(ctx, sp, testCacheName, "key1", "node-abc", sampleOutputs("hello")))
+	rec, err = q.Load(ctx, sp, testCacheName, "key1")
 	require.NoError(t, err)
 	require.NotNil(t, rec)
 	assert.Equal(t, "node-abc", rec.NodeID)
@@ -278,10 +277,10 @@ func TestMySQLSaveReplaces(t *testing.T) {
 	sp := setupMySQL(ctx, t)
 	q := memodb.NewQueries(testTableName, sqldb.MySQL)
 
-	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "key3", "node-old", sampleOutputs("old")))
-	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "key3", "node-new", sampleOutputs("new")))
+	require.NoError(t, q.Save(ctx, sp, testCacheName, "key3", "node-old", sampleOutputs("old")))
+	require.NoError(t, q.Save(ctx, sp, testCacheName, "key3", "node-new", sampleOutputs("new")))
 
-	rec, err := q.Load(ctx, sp, testNamespace, testCacheName, "key3")
+	rec, err := q.Load(ctx, sp, testCacheName, "key3")
 	require.NoError(t, err)
 	require.NotNil(t, rec)
 	assert.Equal(t, "node-new", rec.NodeID)
@@ -293,8 +292,8 @@ func TestMySQLPruneRemovesOldEntries(t *testing.T) {
 	sp := setupMySQL(ctx, t)
 	q := memodb.NewQueries(testTableName, sqldb.MySQL)
 
-	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "old-key", "node-old", sampleOutputs("old")))
-	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "new-key", "node-new", sampleOutputs("new")))
+	require.NoError(t, q.Save(ctx, sp, testCacheName, "old-key", "node-old", sampleOutputs("old")))
+	require.NoError(t, q.Save(ctx, sp, testCacheName, "new-key", "node-new", sampleOutputs("new")))
 
 	// Backdate old-key's last_hit_at to 10 days ago.
 	_, err := sp.Session().SQL().
@@ -305,11 +304,11 @@ func TestMySQLPruneRemovesOldEntries(t *testing.T) {
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, n, "expected exactly one row pruned")
 
-	old, err := q.Load(ctx, sp, testNamespace, testCacheName, "old-key")
+	old, err := q.Load(ctx, sp, testCacheName, "old-key")
 	require.NoError(t, err)
 	assert.Nil(t, old, "old entry should have been pruned")
 
-	fresh, err := q.Load(ctx, sp, testNamespace, testCacheName, "new-key")
+	fresh, err := q.Load(ctx, sp, testCacheName, "new-key")
 	require.NoError(t, err)
 	assert.NotNil(t, fresh, "new entry should still exist")
 }

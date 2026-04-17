@@ -123,8 +123,8 @@ func (s *SQLDBMemoizeSuite) assertDBCacheEntry(ctx context.Context, key string) 
 
 	var count int
 	row, err := session.SQL().
-		QueryRow("SELECT COUNT(*) FROM "+tableName+` WHERE namespace = ? AND cache_name = ? AND "key" = ?`,
-			fixtures.Namespace, "sqldb-memo-cache", key)
+		QueryRow("SELECT COUNT(*) FROM "+tableName+` WHERE cache_name = ? AND "key" = ?`,
+			"sqldb-memo-cache", key)
 	s.Require().NoError(err)
 	s.Require().NoError(row.Scan(&count))
 	s.Equal(1, count, "expected exactly one cache entry in the database for key %q", key)
@@ -132,8 +132,8 @@ func (s *SQLDBMemoizeSuite) assertDBCacheEntry(ctx context.Context, key string) 
 	// Also verify outputs are stored as valid JSON.
 	var outputs string
 	row, err = session.SQL().
-		QueryRow("SELECT outputs FROM "+tableName+` WHERE namespace = ? AND cache_name = ? AND "key" = ?`,
-			fixtures.Namespace, "sqldb-memo-cache", key)
+		QueryRow("SELECT outputs FROM "+tableName+` WHERE cache_name = ? AND "key" = ?`,
+			"sqldb-memo-cache", key)
 	s.Require().NoError(err)
 	s.Require().NoError(row.Scan(&outputs))
 	s.NotEmpty(outputs)
