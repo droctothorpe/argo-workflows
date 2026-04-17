@@ -1,6 +1,7 @@
 Description: Add SQL database-backed memoization cache as an alternative to ConfigMaps.
 Authors: [droctothorpe](https://github.com/droctothorpe)
 Component: General
+Issues: 15952
 PRs: 15938
 
 Memoization can now store cache entries in a PostgreSQL or MySQL database instead of Kubernetes ConfigMaps.
