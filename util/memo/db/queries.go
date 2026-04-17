@@ -128,13 +128,13 @@ func (q *Queries) Save(ctx context.Context, sp *sqldb.SessionProxy, namespace, c
 			_, err := sess.SQL().ExecContext(ctx,
 				fmt.Sprintf(`INSERT INTO %s (namespace, cache_name, "key", node_id, outputs, created_at, last_hit_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-ON CONFLICT (namespace, cache_name, "key") DO UPDATE SET node_id = $4, outputs = $5, created_at = $6, last_hit_at = $7`, q.tableName),
+ON CONFLICT (namespace, cache_name, "key") DO UPDATE SET node_id = $4, outputs = $5, last_hit_at = $7`, q.tableName),
 				namespace, cacheName, key, nodeID, outputsStr, now, now)
 			return err
 		case sqldb.MySQL:
 			_, err := sess.SQL().ExecContext(ctx,
-				fmt.Sprintf("INSERT INTO %s (namespace, cache_name, `key`, node_id, outputs, created_at, last_hit_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE node_id = ?, outputs = ?, created_at = ?, last_hit_at = ?", q.tableName),
-				namespace, cacheName, key, nodeID, outputsStr, now, now, nodeID, outputsStr, now, now)
+				fmt.Sprintf("INSERT INTO %s (namespace, cache_name, `key`, node_id, outputs, created_at, last_hit_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE node_id = ?, outputs = ?, last_hit_at = ?", q.tableName),
+				namespace, cacheName, key, nodeID, outputsStr, now, now, nodeID, outputsStr, now)
 			return err
 		default:
 			return fmt.Errorf("unsupported database type: %s", q.dbType)

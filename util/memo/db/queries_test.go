@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	testcontainers "github.com/testcontainers/testcontainers-go"
+	testmysql "github.com/testcontainers/testcontainers-go/modules/mysql"
 	testpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
@@ -60,6 +61,57 @@ func setupPostgres(ctx context.Context, t *testing.T) *sqldb.SessionProxy {
 
 	dbCfg := config.DBConfig{
 		PostgreSQL: &config.PostgreSQLConfig{
+			DatabaseConfig: config.DatabaseConfig{
+				Host:     host,
+				Port:     port,
+				Database: testDBName,
+			},
+		},
+	}
+	sp, err := sqldb.NewSessionProxy(ctx, sqldb.SessionProxyConfig{
+		DBConfig:   dbCfg,
+		Username:   testDBUser,
+		Password:   testDBPassword,
+		MaxRetries: 5,
+		BaseDelay:  200 * time.Millisecond,
+		MaxDelay:   10 * time.Second,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sp.Close() })
+
+	memoCfg := &config.MemoizationConfig{
+		DBConfig:  dbCfg,
+		TableName: testTableName,
+	}
+	require.NoError(t, memodb.Migrate(ctx, sp, memodb.ConfigFromConfig(memoCfg)))
+	return sp
+}
+
+// setupMySQL starts a throwaway MySQL container and returns a migrated SessionProxy.
+func setupMySQL(ctx context.Context, t *testing.T) *sqldb.SessionProxy {
+	t.Helper()
+	my, err := testmysql.Run(ctx,
+		"mysql:8.4.5",
+		testmysql.WithDatabase(testDBName),
+		testmysql.WithUsername(testDBUser),
+		testmysql.WithPassword(testDBPassword),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if termErr := testcontainers.TerminateContainer(my); termErr != nil {
+			t.Logf("failed to terminate mysql container: %s", termErr)
+		}
+	})
+
+	host, err := my.Host(ctx)
+	require.NoError(t, err)
+	portStr, err := my.MappedPort(ctx, "3306/tcp")
+	require.NoError(t, err)
+	port, err := strconv.Atoi(portStr.Port())
+	require.NoError(t, err)
+
+	dbCfg := config.DBConfig{
+		MySQL: &config.MySQLConfig{
 			DatabaseConfig: config.DatabaseConfig{
 				Host:     host,
 				Port:     port,
@@ -172,7 +224,7 @@ func TestQueriesPruneRemovesOldEntries(t *testing.T) {
 
 	// Backdate old-key's last_hit_at to 10 days ago.
 	_, err := sp.Session().SQL().
-		Exec("UPDATE "+testTableName+" SET last_hit_at = ? WHERE key = 'old-key'", time.Now().Add(-10*24*time.Hour))
+		Exec(`UPDATE `+testTableName+` SET last_hit_at = ? WHERE "key" = 'old-key'`, time.Now().Add(-10*24*time.Hour))
 	require.NoError(t, err)
 
 	// Prune with 5-day TTL — old-key should be deleted, new-key should survive.
@@ -200,4 +252,64 @@ func TestQueriesPruneKeepsRecentEntries(t *testing.T) {
 	n, err := q.Prune(ctx, sp, 90*24*time.Hour)
 	require.NoError(t, err)
 	assert.EqualValues(t, 0, n, "expected no rows pruned when all entries are fresh")
+}
+
+// MySQL test variants — verify backtick quoting, longtext, and ON DUPLICATE KEY UPDATE.
+
+func TestMySQLSaveAndLoad(t *testing.T) {
+	ctx := logging.TestContext(t.Context())
+	sp := setupMySQL(ctx, t)
+	q := memodb.NewQueries(testTableName, sqldb.MySQL)
+
+	rec, err := q.Load(ctx, sp, testNamespace, testCacheName, "key1")
+	require.NoError(t, err)
+	assert.Nil(t, rec, "expected nil for missing key")
+
+	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "key1", "node-abc", sampleOutputs("hello")))
+	rec, err = q.Load(ctx, sp, testNamespace, testCacheName, "key1")
+	require.NoError(t, err)
+	require.NotNil(t, rec)
+	assert.Equal(t, "node-abc", rec.NodeID)
+	assert.Contains(t, rec.Outputs, "hello")
+}
+
+func TestMySQLSaveReplaces(t *testing.T) {
+	ctx := logging.TestContext(t.Context())
+	sp := setupMySQL(ctx, t)
+	q := memodb.NewQueries(testTableName, sqldb.MySQL)
+
+	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "key3", "node-old", sampleOutputs("old")))
+	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "key3", "node-new", sampleOutputs("new")))
+
+	rec, err := q.Load(ctx, sp, testNamespace, testCacheName, "key3")
+	require.NoError(t, err)
+	require.NotNil(t, rec)
+	assert.Equal(t, "node-new", rec.NodeID)
+	assert.Contains(t, rec.Outputs, "new")
+}
+
+func TestMySQLPruneRemovesOldEntries(t *testing.T) {
+	ctx := logging.TestContext(t.Context())
+	sp := setupMySQL(ctx, t)
+	q := memodb.NewQueries(testTableName, sqldb.MySQL)
+
+	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "old-key", "node-old", sampleOutputs("old")))
+	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "new-key", "node-new", sampleOutputs("new")))
+
+	// Backdate old-key's last_hit_at to 10 days ago.
+	_, err := sp.Session().SQL().
+		Exec("UPDATE "+testTableName+" SET last_hit_at = ? WHERE `key` = 'old-key'", time.Now().Add(-10*24*time.Hour))
+	require.NoError(t, err)
+
+	n, err := q.Prune(ctx, sp, 5*24*time.Hour)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, n, "expected exactly one row pruned")
+
+	old, err := q.Load(ctx, sp, testNamespace, testCacheName, "old-key")
+	require.NoError(t, err)
+	assert.Nil(t, old, "old entry should have been pruned")
+
+	fresh, err := q.Load(ctx, sp, testNamespace, testCacheName, "new-key")
+	require.NoError(t, err)
+	assert.NotNil(t, fresh, "new entry should still exist")
 }
