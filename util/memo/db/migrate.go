@@ -40,6 +40,6 @@ func migrate(ctx context.Context, session db.Session, dbType sqldb.DBType, table
 				"last_hit_at timestamp    not null, " +
 				"primary key (namespace, cache_name, `key`))"),
 		}),
-		sqldb.AnsiSQLChange(`create index if not exists imemo_last_hit_at on ` + tableName + ` (last_hit_at)`),
+		sqldb.AnsiSQLChange(`create index imemo_last_hit_at on ` + tableName + ` (last_hit_at)`),
 	})
 }

@@ -137,7 +137,6 @@ func (s *SQLDBMemoizeSuite) assertDBCacheEntry(ctx context.Context, key string) 
 	s.Require().NoError(err)
 	s.Require().NoError(row.Scan(&outputs))
 	s.NotEmpty(outputs)
-
 }
 
 // assertNoConfigMap verifies the controller did NOT fall back to creating a ConfigMap cache.

@@ -50,8 +50,8 @@ func (e *Entry) GetOutputsWithMaxAge(maxAge time.Duration) (*wfv1.Outputs, bool)
 }
 
 type cacheFactory struct {
-	caches       map[string]MemoizationCache
-	kubeclient   kubernetes.Interface
+	caches     map[string]MemoizationCache
+	kubeclient kubernetes.Interface
 	// namespace is the controller's install namespace, used both for ConfigMap operations and as
 	// the namespace column in the SQL backend. All cache entries share this value.
 	namespace    string
