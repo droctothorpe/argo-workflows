@@ -87,10 +87,20 @@ func (wfc *WorkflowController) updateConfig(ctx context.Context) error {
 		}
 		if wfc.memoSessionProxy != nil {
 			cfg := memodb.ConfigFromConfig(memoCfg)
-			memodb.Migrate(ctx, wfc.memoSessionProxy, cfg)
-			wfc.cacheFactory.SetSessionProxy(wfc.memoSessionProxy, cfg.TableName)
+			if err := memodb.Migrate(ctx, wfc.memoSessionProxy, cfg); err != nil {
+				logger.WithError(err).Error(ctx, "Memoization db migration failed; falling back to ConfigMap-based caching")
+				wfc.memoSessionProxy = nil
+				wfc.cacheFactory.SetSessionProxy(nil, "")
+			} else {
+				wfc.cacheFactory.SetSessionProxy(wfc.memoSessionProxy, cfg.TableName)
+			}
 		}
 	} else {
+		if wfc.memoSessionProxy != nil {
+			logger.Info(ctx, "Memoization database configuration removed; reverting to ConfigMap-based caching")
+			wfc.memoSessionProxy = nil
+		}
+		wfc.cacheFactory.SetSessionProxy(nil, "")
 		logger.Info(ctx, "Memoization database configuration disabled; using ConfigMap-based caching")
 	}
 

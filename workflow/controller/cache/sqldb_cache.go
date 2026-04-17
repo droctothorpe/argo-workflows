@@ -24,7 +24,7 @@ func newSQLDBCache(namespace string, name string, sp *sqldb.SessionProxy, tableN
 		namespace:    namespace,
 		name:         name,
 		sessionProxy: sp,
-		queries:      memodb.NewQueries(tableName),
+		queries:      memodb.NewQueries(tableName, sp.DBType()),
 	}
 }
 

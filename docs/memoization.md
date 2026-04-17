@@ -40,11 +40,11 @@ metadata:
   namespace: argo
 data:
   memoization: |
+    tableName: memoization_cache
     postgresql:
       host: postgres
       port: 5432
       database: postgres
-      tableName: memoization_cache
       userNameSecret:
         name: argo-postgres-config
         key: username
@@ -55,7 +55,7 @@ data:
 ```
 
 The `cacheTTL` field controls how long cache entries that have not been accessed are retained.
-It defaults to `"2160h"` (90 days). Set to `"0"` to disable automatic pruning.
+It defaults to `"2160h"` (90 days). Setting it to `"0"` uses the default TTL. Set to a negative value (e.g., `"-1s"`) to disable automatic pruning.
 
 !!! Note
     The workflow spec continues to reference a `configMap.name` in the `memoize.cache` field — this value is used as a logical cache group name in the database, not as a Kubernetes ConfigMap. No ConfigMap is created when the SQL backend is configured.
@@ -64,11 +64,11 @@ MySQL is also supported:
 
 ```yaml
   memoization: |
+    tableName: memoization_cache
     mysql:
       host: mysql
       port: 3306
       database: argo
-      tableName: memoization_cache
       userNameSecret:
         name: argo-mysql-config
         key: username
@@ -103,7 +103,7 @@ spec:
 [Find a simple example for memoization here](https://github.com/argoproj/argo-workflows/blob/main/examples/memoize-simple.yaml).
 
 !!! Note
-    In order to use memoization with the ConfigMap backend it is necessary to add the verbs `create` and `update` to the `configmaps` resource for the appropriate (cluster) roles. In the case of a cluster install the `argo-cluster-role` cluster role should be updated, whilst for a namespace install the `argo-role` role should be updated. This is not required when using the SQL database backend.
+    To use memoization with the ConfigMap backend, add the verbs `create` and `update` to the `configmaps` resource for the appropriate (cluster) roles. For a cluster install, update the `argo-cluster-role` cluster role; for a namespace install, update the `argo-role` role. This is not required when using the SQL database backend.
 
 ## FAQ
 

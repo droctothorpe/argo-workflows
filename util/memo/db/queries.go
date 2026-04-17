@@ -1,10 +1,12 @@
 package db
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/upper/db/v4"
@@ -12,6 +14,8 @@ import (
 	wfv1 "github.com/argoproj/argo-workflows/v4/pkg/apis/workflow/v1alpha1"
 	"github.com/argoproj/argo-workflows/v4/util/sqldb"
 )
+
+const postgresNullReplacement = "ARGO_POSTGRES_NULL_REPLACEMENT"
 
 // CacheRecord is the database row for a single memoization cache entry.
 type CacheRecord struct {
@@ -27,19 +31,24 @@ type CacheRecord struct {
 // Queries provides database operations for the memoization cache table.
 type Queries struct {
 	tableName string
+	dbType    sqldb.DBType
 }
 
-func NewQueries(tableName string) *Queries {
-	return &Queries{tableName: tableName}
+func NewQueries(tableName string, dbType sqldb.DBType) *Queries {
+	return &Queries{tableName: tableName, dbType: dbType}
 }
 
-// Load retrieves the outputs for the given key and updates last_hit_at. Returns nil when the entry
-// does not exist.
+// lastHitAtUpdateInterval controls how often last_hit_at is refreshed on cache reads. Updates are
+// skipped when the existing value is newer than this threshold, avoiding a write transaction on
+// every Load while still keeping GC TTL accurate (default TTL is 90 days).
+const lastHitAtUpdateInterval = 1 * time.Hour
+
+// Load retrieves the outputs for the given key and refreshes last_hit_at if it is stale.
+// Returns nil when the entry does not exist.
 func (q *Queries) Load(ctx context.Context, sp *sqldb.SessionProxy, namespace, cacheName, key string) (*CacheRecord, error) {
-	var record *CacheRecord
-	err := sp.TxWith(ctx, func(txProxy *sqldb.SessionProxy) error {
-		sess := txProxy.Session()
-		var r CacheRecord
+	var r CacheRecord
+	var found bool
+	err := sp.With(ctx, func(sess db.Session) error {
 		err := sess.Collection(q.tableName).
 			Find(db.Cond{
 				"namespace":  namespace,
@@ -53,67 +62,82 @@ func (q *Queries) Load(ctx context.Context, sp *sqldb.SessionProxy, namespace, c
 		if err != nil {
 			return err
 		}
-		r.LastHitAt = time.Now()
-		_, err = sess.SQL().
-			Update(q.tableName).
-			Set("last_hit_at", r.LastHitAt).
-			Where(db.Cond{
-				"namespace":  namespace,
-				"cache_name": cacheName,
-				"key":        key,
-			}).
-			Exec()
-		if err != nil {
-			return err
-		}
-		record = &r
+		found = true
 		return nil
-	}, nil)
-	return record, err
+	})
+	if err != nil || !found {
+		return nil, err
+	}
+
+	// Only update last_hit_at if the existing value is stale, to avoid a write on every read.
+	now := time.Now()
+	if now.Sub(r.LastHitAt) >= lastHitAtUpdateInterval {
+		_ = sp.With(ctx, func(sess db.Session) error {
+			_, err := sess.SQL().
+				Update(q.tableName).
+				Set("last_hit_at", now).
+				Where(db.Cond{
+					"namespace":  namespace,
+					"cache_name": cacheName,
+					"key":        key,
+				}).
+				Exec()
+			return err
+		})
+		r.LastHitAt = now
+	}
+
+	if q.dbType == sqldb.Postgres {
+		r.Outputs = strings.ReplaceAll(r.Outputs, postgresNullReplacement, "\\u0000")
+	}
+	return &r, nil
 }
 
 // Prune deletes cache entries whose last_hit_at is older than maxAge. It is called periodically
 // by the controller to bound the size of the memoization_cache table.
 func (q *Queries) Prune(ctx context.Context, sp *sqldb.SessionProxy, maxAge time.Duration) (int64, error) {
 	cutoff := time.Now().Add(-maxAge)
-	result, err := sp.Session().SQL().
-		DeleteFrom(q.tableName).
-		Where("last_hit_at < ?", cutoff).
-		Exec()
-	if err != nil {
-		return 0, err
-	}
-	n, err := result.RowsAffected()
+	var n int64
+	err := sp.With(ctx, func(sess db.Session) error {
+		result, err := sess.SQL().
+			DeleteFrom(q.tableName).
+			Where("last_hit_at < ?", cutoff).
+			Exec()
+		if err != nil {
+			return err
+		}
+		n, err = result.RowsAffected()
+		return err
+	})
 	return n, err
 }
+
 func (q *Queries) Save(ctx context.Context, sp *sqldb.SessionProxy, namespace, cacheName, key, nodeID string, outputs *wfv1.Outputs) error {
 	outputsJSON, err := json.Marshal(outputs)
 	if err != nil {
 		return fmt.Errorf("unable to marshal memoization outputs: %w", err)
 	}
+	outputsStr := string(outputsJSON)
+	if q.dbType == sqldb.Postgres {
+		outputsStr = string(bytes.ReplaceAll([]byte(outputsStr), []byte("\\u0000"), []byte(postgresNullReplacement)))
+	}
 	now := time.Now()
-	return sp.TxWith(ctx, func(txProxy *sqldb.SessionProxy) error {
-		sess := txProxy.Session()
-		_, err := sess.SQL().
-			DeleteFrom(q.tableName).
-			Where(db.Cond{
-				"namespace":  namespace,
-				"cache_name": cacheName,
-				"key":        key,
-			}).
-			Exec()
-		if err != nil {
+	return sp.With(ctx, func(sess db.Session) error {
+		switch q.dbType {
+		case sqldb.Postgres:
+			_, err := sess.SQL().ExecContext(ctx,
+				fmt.Sprintf(`INSERT INTO %s (namespace, cache_name, "key", node_id, outputs, created_at, last_hit_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (namespace, cache_name, "key") DO UPDATE SET node_id = $4, outputs = $5, created_at = $6, last_hit_at = $7`, q.tableName),
+				namespace, cacheName, key, nodeID, outputsStr, now, now)
 			return err
+		case sqldb.MySQL:
+			_, err := sess.SQL().ExecContext(ctx,
+				fmt.Sprintf("INSERT INTO %s (namespace, cache_name, `key`, node_id, outputs, created_at, last_hit_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE node_id = ?, outputs = ?, created_at = ?, last_hit_at = ?", q.tableName),
+				namespace, cacheName, key, nodeID, outputsStr, now, now, nodeID, outputsStr, now, now)
+			return err
+		default:
+			return fmt.Errorf("unsupported database type: %s", q.dbType)
 		}
-		_, err = sess.Collection(q.tableName).Insert(&CacheRecord{
-			Namespace: namespace,
-			CacheName: cacheName,
-			Key:       key,
-			NodeID:    nodeID,
-			Outputs:   string(outputsJSON),
-			CreatedAt: now,
-			LastHitAt: now,
-		})
-		return err
-	}, nil)
+	})
 }

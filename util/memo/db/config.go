@@ -29,6 +29,9 @@ func TableName(cfg *config.MemoizationConfig) string {
 }
 
 func ConfigFromConfig(cfg *config.MemoizationConfig) Config {
+	if cfg == nil {
+		return Config{TableName: defaultTableName}
+	}
 	return Config{
 		TableName:     TableName(cfg),
 		SkipMigration: cfg.SkipMigration,
@@ -52,24 +55,26 @@ func SessionProxyFromConfig(ctx context.Context, kubectlConfig kubernetes.Interf
 		log.WithError(err).Error(ctx, "unable to create memoization database connection")
 		return nil
 	}
+	sqldb.ConfigureDBSession(sessionProxy.Session(), cfg.ConnectionPool)
 	return sessionProxy
 }
 
 // Migrate runs database migrations for the memoization cache table. It is a no-op when
-// cfg.SkipMigration is true.
-func Migrate(ctx context.Context, sessionProxy *sqldb.SessionProxy, cfg Config) {
+// cfg.SkipMigration is true. Returns an error if migration fails; callers should fall back
+// to ConfigMap-based caching.
+func Migrate(ctx context.Context, sessionProxy *sqldb.SessionProxy, cfg Config) error {
 	if sessionProxy == nil {
-		return
+		return nil
 	}
 	logger := logging.RequireLoggerFromContext(ctx)
 	if cfg.SkipMigration {
 		logger.Info(ctx, "Memoization db migration skipped")
-		return
+		return nil
 	}
 	logger.Info(ctx, "Running memoization db migration")
 	if err := migrate(ctx, sessionProxy.Session(), sessionProxy.DBType(), cfg.TableName); err != nil {
-		logger.WithError(err).Warn(ctx, "memoization db migration failed; database-backed memoization will not work")
-	} else {
-		logger.Info(ctx, "Memoization db migration complete")
+		return err
 	}
+	logger.Info(ctx, "Memoization db migration complete")
+	return nil
 }

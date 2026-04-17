@@ -10,7 +10,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
-	"github.com/upper/db/v4"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	wfv1 "github.com/argoproj/argo-workflows/v4/pkg/apis/workflow/v1alpha1"
@@ -139,7 +138,6 @@ func (s *SQLDBMemoizeSuite) assertDBCacheEntry(ctx context.Context, key string) 
 	s.Require().NoError(row.Scan(&outputs))
 	s.NotEmpty(outputs)
 
-	_ = db.ErrNoMoreRows // keep import used
 }
 
 // assertNoConfigMap verifies the controller did NOT fall back to creating a ConfigMap cache.

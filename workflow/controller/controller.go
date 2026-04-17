@@ -748,12 +748,16 @@ func (wfc *WorkflowController) memoizationCacheGarbageCollector(ctx context.Cont
 	}
 
 	periodicity := env.LookupEnvDurationOr(ctx, "MEMO_CACHE_GC_PERIOD", 24*time.Hour)
+	if periodicity <= 0 {
+		logger.Info(ctx, "MEMO_CACHE_GC_PERIOD is zero or negative - cache GC disabled")
+		return
+	}
 	logger.WithFields(logging.Fields{"ttl": ttl, "periodicity": periodicity}).Info(ctx, "Starting memoization cache GC")
 
 	ticker := time.NewTicker(periodicity)
 	defer ticker.Stop()
 	cfg := memodb.ConfigFromConfig(memoCfg)
-	queries := memodb.NewQueries(cfg.TableName)
+	queries := memodb.NewQueries(cfg.TableName, wfc.memoSessionProxy.DBType())
 	for {
 		select {
 		case <-ctx.Done():

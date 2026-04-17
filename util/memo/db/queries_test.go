@@ -82,7 +82,7 @@ func setupPostgres(ctx context.Context, t *testing.T) *sqldb.SessionProxy {
 		DBConfig:  dbCfg,
 		TableName: testTableName,
 	}
-	memodb.Migrate(ctx, sp, memodb.ConfigFromConfig(memoCfg))
+	require.NoError(t, memodb.Migrate(ctx, sp, memodb.ConfigFromConfig(memoCfg)))
 	return sp
 }
 
@@ -97,7 +97,7 @@ func sampleOutputs(message string) *wfv1.Outputs {
 func TestQueriesSaveAndLoad(t *testing.T) {
 	ctx := logging.TestContext(t.Context())
 	sp := setupPostgres(ctx, t)
-	q := memodb.NewQueries(testTableName)
+	q := memodb.NewQueries(testTableName, sqldb.Postgres)
 
 	// Load returns nil when no entry exists.
 	rec, err := q.Load(ctx, sp, testNamespace, testCacheName, "key1")
@@ -113,10 +113,10 @@ func TestQueriesSaveAndLoad(t *testing.T) {
 	assert.Contains(t, rec.Outputs, "hello")
 }
 
-func TestQueriesLoadUpdatesLastHitAt(t *testing.T) {
+func TestQueriesLoadDebounceLastHitAt(t *testing.T) {
 	ctx := logging.TestContext(t.Context())
 	sp := setupPostgres(ctx, t)
-	q := memodb.NewQueries(testTableName)
+	q := memodb.NewQueries(testTableName, sqldb.Postgres)
 
 	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "key2", "node-1", sampleOutputs("v1")))
 
@@ -124,21 +124,32 @@ func TestQueriesLoadUpdatesLastHitAt(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, first)
 
-	// Wait a moment so the second load gets a later timestamp.
-	time.Sleep(5 * time.Millisecond)
-
+	// A second Load immediately after should NOT update last_hit_at (debounce).
+	time.Sleep(50 * time.Millisecond)
 	second, err := q.Load(ctx, sp, testNamespace, testCacheName, "key2")
 	require.NoError(t, err)
 	require.NotNil(t, second)
+	assert.Equal(t, first.LastHitAt, second.LastHitAt,
+		"last_hit_at should not change within debounce interval (first=%v second=%v)", first.LastHitAt, second.LastHitAt)
 
-	assert.True(t, second.LastHitAt.After(first.LastHitAt),
-		"last_hit_at should advance on each Load (first=%v second=%v)", first.LastHitAt, second.LastHitAt)
+	// Backdate last_hit_at by 2 hours so it exceeds the debounce interval, then verify Load refreshes it.
+	staleTime := time.Now().Add(-2 * time.Hour)
+	_, err = sp.Session().SQL().ExecContext(ctx,
+		"UPDATE "+testTableName+" SET last_hit_at = $1 WHERE namespace = $2 AND cache_name = $3 AND \"key\" = $4",
+		staleTime, testNamespace, testCacheName, "key2")
+	require.NoError(t, err)
+
+	refreshed, err := q.Load(ctx, sp, testNamespace, testCacheName, "key2")
+	require.NoError(t, err)
+	require.NotNil(t, refreshed)
+	assert.True(t, refreshed.LastHitAt.After(staleTime),
+		"last_hit_at should be refreshed after debounce interval (stale=%v refreshed=%v)", staleTime, refreshed.LastHitAt)
 }
 
 func TestQueriesSaveReplaces(t *testing.T) {
 	ctx := logging.TestContext(t.Context())
 	sp := setupPostgres(ctx, t)
-	q := memodb.NewQueries(testTableName)
+	q := memodb.NewQueries(testTableName, sqldb.Postgres)
 
 	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "key3", "node-old", sampleOutputs("old")))
 	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "key3", "node-new", sampleOutputs("new")))
@@ -153,7 +164,7 @@ func TestQueriesSaveReplaces(t *testing.T) {
 func TestQueriesPruneRemovesOldEntries(t *testing.T) {
 	ctx := logging.TestContext(t.Context())
 	sp := setupPostgres(ctx, t)
-	q := memodb.NewQueries(testTableName)
+	q := memodb.NewQueries(testTableName, sqldb.Postgres)
 
 	// Save two entries.
 	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "old-key", "node-old", sampleOutputs("old")))
@@ -181,7 +192,7 @@ func TestQueriesPruneRemovesOldEntries(t *testing.T) {
 func TestQueriesPruneKeepsRecentEntries(t *testing.T) {
 	ctx := logging.TestContext(t.Context())
 	sp := setupPostgres(ctx, t)
-	q := memodb.NewQueries(testTableName)
+	q := memodb.NewQueries(testTableName, sqldb.Postgres)
 
 	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "recent", "node-1", sampleOutputs("v1")))
 

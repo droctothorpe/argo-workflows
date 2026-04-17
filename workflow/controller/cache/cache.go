@@ -50,9 +50,11 @@ func (e *Entry) GetOutputsWithMaxAge(maxAge time.Duration) (*wfv1.Outputs, bool)
 }
 
 type cacheFactory struct {
-	caches       map[string]MemoizationCache
-	kubeclient   kubernetes.Interface
-	namespace    string
+	caches     map[string]MemoizationCache
+	kubeclient kubernetes.Interface
+	// namespace is the controller's install namespace, used both for ConfigMap operations and as
+	// the namespace column in the SQL backend. All cache entries share this value.
+	namespace string
 	lock         sync.RWMutex
 	sessionProxy *sqldb.SessionProxy
 	tableName    string
@@ -76,7 +78,8 @@ func NewCacheFactory(ki kubernetes.Interface, ns string) Factory {
 type Type string
 
 const (
-	// Only config maps are currently supported for caching
+	// ConfigMapCache is a cache type identifier used as a key prefix in the cache map.
+	// When a database session proxy is configured, SQL-backed caching is used instead.
 	ConfigMapCache Type = "ConfigMapCache"
 )
 

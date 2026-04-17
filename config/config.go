@@ -367,7 +367,7 @@ type MemoizationConfig struct {
 	// SkipMigration skips automatic database migration on startup.
 	SkipMigration bool `json:"skipMigration,omitempty"`
 	// CacheTTL is the duration after which cache entries that have not been hit are deleted by the
-	// garbage collector. Defaults to "2160h" (90 days). Set to "0" to disable GC.
+	// garbage collector. Defaults to "2160h" (90 days). Set to a negative value (e.g., "-1s") to disable GC.
 	CacheTTL TTL `json:"cacheTTL,omitempty"`
 }
 
