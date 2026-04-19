@@ -6,12 +6,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	wfv1 "github.com/argoproj/argo-workflows/v4/pkg/apis/workflow/v1alpha1"
-	"github.com/argoproj/argo-workflows/v4/util/logging"
 	"github.com/argoproj/argo-workflows/v4/workflow/artifacts"
 	artifactcommon "github.com/argoproj/argo-workflows/v4/workflow/artifacts/common"
 )
@@ -46,6 +46,10 @@ func (r *wocResourceInterface) GetConfigMapKey(ctx context.Context, name, key st
 	return val, nil
 }
 
+// artifactIdentityFunc resolves the content identity for an artifact.
+// It is a function type to allow testing without a full wfOperationCtx.
+type artifactIdentityFunc func(ctx context.Context, art *wfv1.Artifact) (string, error)
+
 // memoizationKey returns the effective cache key for the given template.
 //
 // If memoize.key is set by the user it is returned as-is (explicit override).
@@ -54,6 +58,12 @@ func (r *wocResourceInterface) GetConfigMapKey(ctx context.Context, name, key st
 //   - all resolved input parameters, sorted by name
 //   - all resolved input artifacts, resolved to a checksum or ETag where
 //     possible, falling back to the artifact storage path
+//
+// Parameters with only a ValueFrom source (no resolved Value) are included
+// with an empty value, which may cause false cache misses but never false hits.
+//
+// Values are length-prefixed in the manifest to prevent injection via embedded
+// newlines or delimiter characters.
 //
 // Any artifact whose checksum cannot be determined is silently fallen back to
 // path-identity. The key derivation is intentionally non-fatal: worst case a
@@ -64,62 +74,108 @@ func memoizationKey(ctx context.Context, woc *wfOperationCtx, tmpl *wfv1.Templat
 	}
 
 	ri := &wocResourceInterface{woc: woc}
+	identityFn := func(ctx context.Context, art *wfv1.Artifact) (string, error) {
+		return resolveArtifactIdentity(ctx, woc, ri, art)
+	}
 
+	return buildMemoizationKey(ctx, tmpl, identityFn)
+}
+
+// buildMemoizationKey constructs a deterministic cache key from the template's
+// name and resolved inputs. The artifactIdentityFn is called for each input
+// artifact to resolve its content identity. This function is separated from
+// memoizationKey for testability.
+func buildMemoizationKey(ctx context.Context, tmpl *wfv1.Template, artifactIdentityFn artifactIdentityFunc) (string, error) {
+	manifest := buildManifest(tmpl, func(art *wfv1.Artifact) string {
+		identity, err := artifactIdentityFn(ctx, art)
+		if err != nil {
+			return art.Name
+		}
+		return identity
+	})
+
+	h := sha256.Sum256([]byte(manifest))
+	return hex.EncodeToString(h[:]), nil
+}
+
+// buildManifest creates a deterministic string manifest from the template's
+// name and resolved inputs. The identityFn is called for each input artifact.
+// This pure function contains no I/O and is directly unit-testable.
+func buildManifest(tmpl *wfv1.Template, identityFn func(art *wfv1.Artifact) string) string {
 	var lines []string
+
+	// Version tag so future format changes produce distinct keys.
+	lines = append(lines, "v1")
 
 	// Template name scopes the key so two different templates with the same
 	// inputs don't collide in the cache.
 	lines = append(lines, "template:"+tmpl.Name)
 
-	// Parameters — sorted for determinism.
+	// Parameters — sorted by name for determinism.
+	// Values are length-prefixed ("param:<name>=<len>:<value>") to prevent
+	// newline injection from crafting colliding manifests.
 	if tmpl.Inputs.Parameters != nil {
-		params := make([]wfv1.Parameter, len(tmpl.Inputs.Parameters))
-		copy(params, tmpl.Inputs.Parameters)
-		sort.Slice(params, func(i, j int) bool { return params[i].Name < params[j].Name })
-		for _, p := range params {
+		sorted := sortedParameterNames(tmpl.Inputs.Parameters)
+		for _, p := range sorted {
 			val := ""
 			if p.Value != nil {
 				val = p.Value.String()
 			}
-			lines = append(lines, fmt.Sprintf("param:%s=%s", p.Name, val))
+			lines = append(lines, fmt.Sprintf("param:%s=%s:%s", p.Name, strconv.Itoa(len(val)), val))
 		}
 	}
 
-	// Artifacts — sorted for determinism; resolved to checksum where possible.
+	// Artifacts — sorted by name for determinism; resolved to checksum where possible.
 	if tmpl.Inputs.Artifacts != nil {
-		arts := make([]wfv1.Artifact, len(tmpl.Inputs.Artifacts))
-		copy(arts, tmpl.Inputs.Artifacts)
-		sort.Slice(arts, func(i, j int) bool { return arts[i].Name < arts[j].Name })
-		for _, art := range arts {
-			identity, err := resolveArtifactIdentity(ctx, woc, ri, &art)
-			if err != nil {
-				woc.log.WithFields(logging.Fields{
-					"artifactName": art.Name,
-				}).WithError(err).Warn(ctx, "Could not resolve artifact identity for memoization key; falling back to path")
-			}
-			lines = append(lines, fmt.Sprintf("artifact:%s=%s", art.Name, identity))
+		sorted := sortedArtifactNames(tmpl.Inputs.Artifacts)
+		for _, art := range sorted {
+			identity := identityFn(&art)
+			lines = append(lines, fmt.Sprintf("artifact:%s=%s:%s", art.Name, strconv.Itoa(len(identity)), identity))
 		}
 	}
 
-	manifest := strings.Join(lines, "\n")
-	h := sha256.Sum256([]byte(manifest))
-	return hex.EncodeToString(h[:]), nil
+	return strings.Join(lines, "\n")
+}
+
+// sortedParameterNames returns a copy of the parameters sorted by name.
+func sortedParameterNames(params []wfv1.Parameter) []wfv1.Parameter {
+	sorted := make([]wfv1.Parameter, len(params))
+	copy(sorted, params)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
+	return sorted
+}
+
+// sortedArtifactNames returns a copy of the artifacts sorted by name.
+func sortedArtifactNames(arts []wfv1.Artifact) []wfv1.Artifact {
+	sorted := make([]wfv1.Artifact, len(arts))
+	copy(sorted, arts)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
+	return sorted
 }
 
 // resolveArtifactIdentity returns the best available content identity for an
 // artifact: its saved checksum, an ETag from the storage backend, or as a
-// last resort the artifact's storage key (path).
+// last resort the artifact's storage key (path). If the storage key is also
+// unavailable, the artifact's name is returned.
 func resolveArtifactIdentity(ctx context.Context, woc *wfOperationCtx, ri *wocResourceInterface, art *wfv1.Artifact) (string, error) {
 	driver, err := artifacts.NewDriver(ctx, art, ri)
 	if err != nil {
-		// Fall back to key (path) if we can't build the driver.
-		key, _ := art.GetKey()
+		// Fall back to storage key if we can't build the driver.
+		key, keyErr := art.GetKey()
+		if keyErr != nil {
+			woc.log.WithError(keyErr).Warn(ctx, "Failed to get artifact storage key")
+			return art.Name, fmt.Errorf("new driver: %w", err)
+		}
 		return key, fmt.Errorf("new driver: %w", err)
 	}
 
 	checksum, err := artifactcommon.ResolveChecksum(ctx, art, driver)
 	if err != nil {
-		key, _ := art.GetKey()
+		key, keyErr := art.GetKey()
+		if keyErr != nil {
+			woc.log.WithError(keyErr).Warn(ctx, "Failed to get artifact storage key")
+			return art.Name, fmt.Errorf("resolve checksum: %w", err)
+		}
 		return key, fmt.Errorf("resolve checksum: %w", err)
 	}
 	if checksum != "" {
@@ -129,6 +185,7 @@ func resolveArtifactIdentity(ctx context.Context, woc *wfOperationCtx, ri *wocRe
 	// No checksum or ETag available — use storage path as identity.
 	key, err := art.GetKey()
 	if err != nil {
+		woc.log.WithError(err).Warn(ctx, "Failed to get artifact storage key; falling back to artifact name")
 		return art.Name, err
 	}
 	return key, nil

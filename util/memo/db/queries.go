@@ -10,11 +10,13 @@ import (
 	"github.com/upper/db/v4"
 
 	wfv1 "github.com/argoproj/argo-workflows/v4/pkg/apis/workflow/v1alpha1"
+	"github.com/argoproj/argo-workflows/v4/util/logging"
 	"github.com/argoproj/argo-workflows/v4/util/sqldb"
 )
 
 // CacheRecord is the database row for a single memoization cache entry.
 type CacheRecord struct {
+	Namespace string    `db:"namespace"`
 	CacheName string    `db:"cache_name"`
 	Key       string    `db:"key"`
 	NodeID    string    `db:"node_id"`
@@ -40,12 +42,13 @@ const lastHitAtUpdateInterval = 1 * time.Hour
 
 // Load retrieves the outputs for the given key and refreshes last_hit_at if it is stale.
 // Returns nil when the entry does not exist.
-func (q *Queries) Load(ctx context.Context, sp *sqldb.SessionProxy, cacheName, key string) (*CacheRecord, error) {
+func (q *Queries) Load(ctx context.Context, sp *sqldb.SessionProxy, namespace, cacheName, key string) (*CacheRecord, error) {
 	var r CacheRecord
 	var found bool
 	err := sp.With(ctx, func(sess db.Session) error {
 		err := sess.Collection(q.tableName).
 			Find(db.Cond{
+				"namespace":  namespace,
 				"cache_name": cacheName,
 				"key":        key,
 			}).
@@ -64,20 +67,25 @@ func (q *Queries) Load(ctx context.Context, sp *sqldb.SessionProxy, cacheName, k
 	}
 
 	// Only update last_hit_at if the existing value is stale, to avoid a write on every read.
+	logger := logging.RequireLoggerFromContext(ctx)
 	now := time.Now()
 	if now.Sub(r.LastHitAt) >= lastHitAtUpdateInterval {
-		_ = sp.With(ctx, func(sess db.Session) error {
+		if err := sp.With(ctx, func(sess db.Session) error {
 			_, err := sess.SQL().
 				Update(q.tableName).
 				Set("last_hit_at", now).
 				Where(db.Cond{
+					"namespace":  namespace,
 					"cache_name": cacheName,
 					"key":        key,
 				}).
 				Exec()
 			return err
-		})
-		r.LastHitAt = now
+		}); err != nil {
+			logger.WithError(err).Warn(ctx, "Failed to update last_hit_at for memoization cache entry")
+		} else {
+			r.LastHitAt = now
+		}
 	}
 
 	return &r, nil
@@ -102,7 +110,7 @@ func (q *Queries) Prune(ctx context.Context, sp *sqldb.SessionProxy, maxAge time
 	return n, err
 }
 
-func (q *Queries) Save(ctx context.Context, sp *sqldb.SessionProxy, cacheName, key, nodeID string, outputs *wfv1.Outputs) error {
+func (q *Queries) Save(ctx context.Context, sp *sqldb.SessionProxy, namespace, cacheName, key, nodeID string, outputs *wfv1.Outputs) error {
 	outputsJSON, err := json.Marshal(outputs)
 	if err != nil {
 		return fmt.Errorf("unable to marshal memoization outputs: %w", err)
@@ -113,15 +121,15 @@ func (q *Queries) Save(ctx context.Context, sp *sqldb.SessionProxy, cacheName, k
 		switch q.dbType {
 		case sqldb.Postgres:
 			_, err := sess.SQL().ExecContext(ctx,
-				fmt.Sprintf(`INSERT INTO %s (cache_name, "key", node_id, outputs, created_at, last_hit_at)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (cache_name, "key") DO UPDATE SET node_id = $3, outputs = $4, last_hit_at = $6`, q.tableName),
-				cacheName, key, nodeID, outputsStr, now, now)
+				fmt.Sprintf(`INSERT INTO %s (namespace, cache_name, "key", node_id, outputs, created_at, last_hit_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (namespace, cache_name, "key") DO UPDATE SET node_id = $4, outputs = $5, last_hit_at = $7`, q.tableName),
+				namespace, cacheName, key, nodeID, outputsStr, now, now)
 			return err
 		case sqldb.MySQL:
 			_, err := sess.SQL().ExecContext(ctx,
-				fmt.Sprintf("INSERT INTO %s (cache_name, `key`, node_id, outputs, created_at, last_hit_at) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE node_id = ?, outputs = ?, last_hit_at = ?", q.tableName),
-				cacheName, key, nodeID, outputsStr, now, now, nodeID, outputsStr, now)
+				fmt.Sprintf("INSERT INTO %s (namespace, cache_name, `key`, node_id, outputs, created_at, last_hit_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE node_id = ?, outputs = ?, last_hit_at = ?", q.tableName),
+				namespace, cacheName, key, nodeID, outputsStr, now, now, nodeID, outputsStr, now)
 			return err
 		default:
 			return fmt.Errorf("unsupported database type: %s", q.dbType)
