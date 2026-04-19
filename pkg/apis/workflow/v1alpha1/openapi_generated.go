@@ -3899,7 +3899,7 @@ func schema_pkg_apis_workflow_v1alpha1_Memoize(ref common.ReferenceCallback) com
 				Properties: map[string]spec.Schema{
 					"key": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Key is the key to use as the caching key",
+							Description: "Key is the key to use as the caching key. If omitted, a deterministic key is auto-computed from the template name and inputs.",
 							Default:     "",
 							Type:        []string{"string"},
 							Format:      "",
@@ -3920,7 +3920,7 @@ func schema_pkg_apis_workflow_v1alpha1_Memoize(ref common.ReferenceCallback) com
 						},
 					},
 				},
-				Required: []string{"key", "cache", "maxAge"},
+				Required: []string{"cache", "maxAge"},
 			},
 		},
 		Dependencies: []string{

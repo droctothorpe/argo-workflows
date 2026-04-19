@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
@@ -46,21 +45,27 @@ func (q *Queries) Load(ctx context.Context, sp *sqldb.SessionProxy, namespace, c
 	var r CacheRecord
 	var found bool
 	err := sp.With(ctx, func(sess db.Session) error {
-		err := sess.Collection(q.tableName).
-			Find(db.Cond{
-				"namespace":  namespace,
-				"cache_name": cacheName,
-				"key":        key,
-			}).
-			One(&r)
-		if errors.Is(err, db.ErrNoMoreRows) {
-			return nil
+		// Use raw SQL to avoid upper/db ORM timestamp scanning issues with
+		// "timestamp without timezone" columns (the ORM may not populate time.Time fields).
+		var query string
+		switch q.dbType {
+		case sqldb.Postgres:
+			query = fmt.Sprintf(`SELECT namespace, cache_name, "key", node_id, outputs, created_at, last_hit_at FROM %s WHERE namespace = $1 AND cache_name = $2 AND "key" = $3`, q.tableName)
+		case sqldb.MySQL:
+			query = fmt.Sprintf("SELECT namespace, cache_name, `key`, node_id, outputs, created_at, last_hit_at FROM %s WHERE namespace = ? AND cache_name = ? AND `key` = ?", q.tableName)
+		default:
+			return fmt.Errorf("unsupported database type: %s", q.dbType)
 		}
+		rows, err := sess.SQL().QueryContext(ctx, query, namespace, cacheName, key)
 		if err != nil {
 			return err
 		}
+		defer rows.Close()
+		if !rows.Next() {
+			return rows.Err()
+		}
 		found = true
-		return nil
+		return rows.Scan(&r.Namespace, &r.CacheName, &r.Key, &r.NodeID, &r.Outputs, &r.CreatedAt, &r.LastHitAt)
 	})
 	if err != nil || !found {
 		return nil, err
@@ -68,7 +73,7 @@ func (q *Queries) Load(ctx context.Context, sp *sqldb.SessionProxy, namespace, c
 
 	// Only update last_hit_at if the existing value is stale, to avoid a write on every read.
 	logger := logging.RequireLoggerFromContext(ctx)
-	now := time.Now()
+	now := time.Now().UTC()
 	if now.Sub(r.LastHitAt) >= lastHitAtUpdateInterval {
 		if err := sp.With(ctx, func(sess db.Session) error {
 			_, err := sess.SQL().
@@ -116,7 +121,7 @@ func (q *Queries) Save(ctx context.Context, sp *sqldb.SessionProxy, namespace, c
 		return fmt.Errorf("unable to marshal memoization outputs: %w", err)
 	}
 	outputsStr := string(outputsJSON)
-	now := time.Now()
+	now := time.Now().UTC()
 	return sp.With(ctx, func(sess db.Session) error {
 		switch q.dbType {
 		case sqldb.Postgres:
