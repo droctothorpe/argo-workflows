@@ -2237,7 +2237,15 @@ func (woc *wfOperationCtx) executeTemplate(ctx context.Context, nodeName string,
 				return errNode, cacheErr
 			}
 
-			entry, loadErr := memoizationCache.Load(ctx, processedTmpl.Memoize.Key)
+			// Resolve the effective cache key: use the user-supplied key when set,
+			// otherwise derive a deterministic key from the template name and all
+			// resolved input parameters and artifacts.
+			effectiveKey, keyErr := memoizationKey(ctx, woc, processedTmpl)
+			if keyErr != nil {
+				return woc.initializeNodeOrMarkError(ctx, node, nodeName, templateScope, orgTmpl, opts.boundaryID, opts.nodeFlag, keyErr), keyErr
+			}
+
+			entry, loadErr := memoizationCache.Load(ctx, effectiveKey)
 			if loadErr != nil {
 				return woc.initializeNodeOrMarkError(ctx, node, nodeName, templateScope, orgTmpl, opts.boundaryID, opts.nodeFlag, loadErr), loadErr
 			}
@@ -2262,7 +2270,7 @@ func (woc *wfOperationCtx) executeTemplate(ctx context.Context, nodeName string,
 
 			memoizationStatus := &wfv1.MemoizationStatus{
 				Hit:       hit,
-				Key:       processedTmpl.Memoize.Key,
+				Key:       effectiveKey,
 				CacheName: processedTmpl.Memoize.Cache.ConfigMap.Name,
 			}
 			if hit {
