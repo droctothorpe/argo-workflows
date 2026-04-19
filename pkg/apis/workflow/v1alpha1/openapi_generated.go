@@ -470,6 +470,13 @@ func schema_pkg_apis_workflow_v1alpha1_Artifact(ref common.ReferenceCallback) co
 							Ref:         ref("github.com/argoproj/argo-workflows/v4/pkg/apis/workflow/v1alpha1.ArtifactGC"),
 						},
 					},
+					"checksum": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Checksum is the SHA-256 checksum of the artifact content, computed at save time. Format: \"sha256:<hex>\". Set on output artifacts; used as a stable identity for memoization cache keys.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
 					"deleted": {
 						SchemaProps: spec.SchemaProps{
 							Description: "Has this been deleted?",
@@ -3899,22 +3906,20 @@ func schema_pkg_apis_workflow_v1alpha1_Memoize(ref common.ReferenceCallback) com
 				Properties: map[string]spec.Schema{
 					"key": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Key is the key to use as the caching key. If omitted, a deterministic key is auto-computed from the template name and inputs.",
-							Default:     "",
+							Description: "Key is the key to use as the caching key. If not set, a deterministic key is derived from the template name and all resolved input parameters and artifacts.",
 							Type:        []string{"string"},
 							Format:      "",
 						},
 					},
 					"cache": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Cache sets and configures the kind of cache. When omitted and SQL memoization is configured on the controller, entries are stored under the \"default\" bucket.",
+							Description: "Cache sets and configures the kind of cache. When omitted and SQL memoization is configured on the controller, entries are stored in the SQL cache under the \"default\" bucket. When omitted and no SQL memoization is configured, the workflow will fail at runtime with an error.",
 							Ref:         ref("github.com/argoproj/argo-workflows/v4/pkg/apis/workflow/v1alpha1.Cache"),
 						},
 					},
 					"maxAge": {
 						SchemaProps: spec.SchemaProps{
-							Description: "MaxAge is the maximum age (e.g. \"180s\", \"24h\") of an entry that is still considered valid. If an entry is older than the MaxAge, it will be ignored. When omitted, the controller's defaultMaxAge is used; if that is also unset entries never expire.",
-							Default:     "",
+							Description: "MaxAge is the maximum age (e.g. \"180s\", \"24h\") of an entry that is still considered valid. If an entry is older than the MaxAge, it will be ignored. When omitted, entries are valid until removed by the GC (see CacheTTL).",
 							Type:        []string{"string"},
 							Format:      "",
 						},

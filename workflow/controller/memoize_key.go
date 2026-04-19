@@ -115,7 +115,10 @@ func buildManifest(tmpl *wfv1.Template, identityFn func(art *wfv1.Artifact) stri
 
 	// Executor spec — what the step actually runs. Changes to image, command,
 	// script body, etc. must bust the cache even when inputs are unchanged.
-	lines = append(lines, "executor:"+executorFingerprint(tmpl))
+	// Omitted for template types with no executable spec (e.g. Suspend).
+	if fp := executorFingerprint(tmpl); fp != "" {
+		lines = append(lines, "executor:"+fp)
+	}
 
 	// Parameters — sorted by name for determinism.
 	// Values are length-prefixed ("param:<name>=<len>:<value>") to prevent
