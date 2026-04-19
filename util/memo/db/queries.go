@@ -102,7 +102,7 @@ func (q *Queries) Load(ctx context.Context, sp *sqldb.SessionProxy, namespace, c
 // Prune deletes cache entries whose last_hit_at is older than maxAge. It is called periodically
 // by the controller to bound the size of the memoization_cache table.
 func (q *Queries) Prune(ctx context.Context, sp *sqldb.SessionProxy, maxAge time.Duration) (int64, error) {
-	cutoff := time.Now().Add(-maxAge)
+	cutoff := time.Now().UTC().Add(-maxAge)
 	var n int64
 	err := sp.With(ctx, func(sess db.Session) error {
 		result, err := sess.SQL().

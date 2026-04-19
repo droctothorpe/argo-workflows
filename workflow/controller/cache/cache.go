@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"log"
 	"regexp"
 	"sync"
 	"time"
@@ -118,6 +119,7 @@ func (cf *cacheFactory) GetCache(ct Type, name string) MemoizationCache {
 			var err error
 			c, err = newSQLDBCache(cf.namespace, name, cf.sessionProxy, cf.tableName)
 			if err != nil {
+				log.Printf("failed to create SQL memoization cache %q: %v", name, err)
 				return nil
 			}
 		} else {
