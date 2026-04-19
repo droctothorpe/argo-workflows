@@ -369,10 +369,6 @@ type MemoizationConfig struct {
 	// CacheTTL is the duration after which cache entries that have not been hit are deleted by the
 	// garbage collector. Defaults to "2160h" (90 days). Set to a negative value (e.g., "-1s") to disable GC.
 	CacheTTL TTL `json:"cacheTTL,omitempty"`
-	// DefaultMaxAge is the default maximum age of a cache entry when memoize.maxAge is not set on the
-	// template. Uses Go duration format (e.g. "24h", "7d"). When unset, the built-in default of
-	// 2160h (90 days / 3 months) applies.
-	DefaultMaxAge TTL `json:"defaultMaxAge,omitempty"`
 }
 
 // ConnectionPool contains database connection pool settings
