@@ -10244,7 +10244,6 @@ spec:
                         type: string
                     required:
                     - cache
-                    - key
                     - maxAge
                     type: object
                   metadata:
@@ -27460,7 +27459,9 @@ spec:
                           - configMap
                           type: object
                         key:
-                          description: Key is the key to use as the caching key
+                          description: |-
+                            Key is the key to use as the caching key. If not set, a deterministic key
+                            is derived from the template name and all resolved input parameters and artifacts.
                           type: string
                         maxAge:
                           description: |-
@@ -27469,7 +27470,6 @@ spec:
                           type: string
                       required:
                       - cache
-                      - key
                       - maxAge
                       type: object
                     metadata:

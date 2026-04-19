@@ -4055,8 +4055,10 @@ type Counter struct {
 
 // Memoize enables caching for the Outputs of the template.
 type Memoize struct {
-	// Key is the key to use as the caching key
-	Key string `json:"key" protobuf:"bytes,1,opt,name=key"`
+	// Key is the key to use as the caching key. If not set, a deterministic key
+	// is derived from the template name and all resolved input parameters and artifacts.
+	// +optional
+	Key string `json:"key,omitempty" protobuf:"bytes,1,opt,name=key"`
 	// Cache sets and configures the kind of cache
 	Cache *Cache `json:"cache" protobuf:"bytes,2,opt,name=cache"`
 	// MaxAge is the maximum age (e.g. "180s", "24h") of an entry that is still considered valid. If an entry is older
