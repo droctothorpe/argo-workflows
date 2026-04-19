@@ -88,15 +88,18 @@ func (wfc *WorkflowController) updateConfig(ctx context.Context) error {
 				wfc.cacheFactory.SetSessionProxy(nil, "", true)
 			}
 			wfc.memoSessionProxy = sp
+			wfc.memoMigrated = false
 		}
-		if wfc.memoSessionProxy != nil {
+		if wfc.memoSessionProxy != nil && !wfc.memoMigrated {
 			cfg := memodb.ConfigFromConfig(memoCfg)
 			if err := memodb.Migrate(ctx, wfc.memoSessionProxy, cfg); err != nil {
 				logger.WithError(err).Error(ctx, "Memoization database migration failed; SQL caching unavailable. Workflows using memoization will skip caching until the database is healthy.")
 				wfc.memoSessionProxy.Close()
 				wfc.memoSessionProxy = nil
+				wfc.memoMigrated = false
 				wfc.cacheFactory.SetSessionProxy(nil, "", true)
 			} else {
+				wfc.memoMigrated = true
 				wfc.cacheFactory.SetSessionProxy(wfc.memoSessionProxy, cfg.TableName, true)
 			}
 		}
@@ -105,6 +108,7 @@ func (wfc *WorkflowController) updateConfig(ctx context.Context) error {
 			logger.Info(ctx, "Memoization database configuration removed")
 			wfc.memoSessionProxy.Close()
 			wfc.memoSessionProxy = nil
+			wfc.memoMigrated = false
 		}
 		wfc.cacheFactory.SetSessionProxy(nil, "", false)
 		logger.Info(ctx, "Memoization database configuration disabled; using ConfigMap-based caching")

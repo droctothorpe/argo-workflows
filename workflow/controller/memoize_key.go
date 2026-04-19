@@ -88,12 +88,17 @@ func memoizationKey(ctx context.Context, woc *wfOperationCtx, tmpl *wfv1.Templat
 // artifact to resolve its content identity. This function is separated from
 // memoizationKey for testability.
 func buildMemoizationKey(ctx context.Context, tmpl *wfv1.Template, artifactIdentityFn artifactIdentityFunc) (string, error) {
+	var identityErr error
 	manifest := buildManifest(tmpl, func(art *wfv1.Artifact) string {
-		// resolveArtifactIdentity always returns a non-empty fallback (storage key or
-		// artifact name) even on error, so use the returned value unconditionally.
-		identity, _ := artifactIdentityFn(ctx, art)
+		identity, err := artifactIdentityFn(ctx, art)
+		if err != nil && identityErr == nil {
+			identityErr = fmt.Errorf("artifact %q: %w", art.Name, err)
+		}
 		return identity
 	})
+	if identityErr != nil {
+		return "", identityErr
+	}
 
 	h := sha256.Sum256([]byte(manifest))
 	return hex.EncodeToString(h[:]), nil
@@ -243,17 +248,17 @@ func sortedArtifactNames(arts []wfv1.Artifact) []wfv1.Artifact {
 }
 
 // resolveArtifactIdentity returns the best available content identity for an
-// artifact: its saved checksum, an ETag from the storage backend, or as a
-// last resort the artifact's storage key (path). If the storage key is also
-// unavailable, the artifact's name is returned.
+// artifact: its saved checksum, an ETag from the storage backend, or the
+// artifact's storage key (path). Returns an error if none of these are
+// available; callers should not proceed with key derivation in this case as
+// using the artifact name alone would risk false cache hits.
 func resolveArtifactIdentity(ctx context.Context, woc *wfOperationCtx, ri *wocResourceInterface, art *wfv1.Artifact) (string, error) {
 	driver, err := artifacts.NewDriver(ctx, art, ri)
 	if err != nil {
 		// Fall back to storage key if we can't build the driver.
 		key, keyErr := art.GetKey()
 		if keyErr != nil {
-			woc.log.WithError(keyErr).Warn(ctx, "Failed to get artifact storage key")
-			return art.Name, fmt.Errorf("new driver: %w", err)
+			return "", fmt.Errorf("new driver: %w; get key: %w", err, keyErr)
 		}
 		return key, fmt.Errorf("new driver: %w", err)
 	}
@@ -262,8 +267,7 @@ func resolveArtifactIdentity(ctx context.Context, woc *wfOperationCtx, ri *wocRe
 	if err != nil {
 		key, keyErr := art.GetKey()
 		if keyErr != nil {
-			woc.log.WithError(keyErr).Warn(ctx, "Failed to get artifact storage key")
-			return art.Name, fmt.Errorf("resolve checksum: %w", err)
+			return "", fmt.Errorf("resolve checksum: %w; get key: %w", err, keyErr)
 		}
 		return key, fmt.Errorf("resolve checksum: %w", err)
 	}
@@ -274,8 +278,7 @@ func resolveArtifactIdentity(ctx context.Context, woc *wfOperationCtx, ri *wocRe
 	// No checksum or ETag available — use storage path as identity.
 	key, err := art.GetKey()
 	if err != nil {
-		woc.log.WithError(err).Warn(ctx, "Failed to get artifact storage key; falling back to artifact name")
-		return art.Name, err
+		return "", fmt.Errorf("get key: %w", err)
 	}
 	return key, nil
 }

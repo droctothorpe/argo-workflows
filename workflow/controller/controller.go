@@ -136,6 +136,7 @@ type WorkflowController struct {
 	workflowKeyLock       syncpkg.KeyLock // used to lock workflows for exclusive modification or access
 	sessionProxy          *utilsqldb.SessionProxy
 	memoSessionProxy      *utilsqldb.SessionProxy
+	memoMigrated          bool
 	offloadNodeStatusRepo sqldb.OffloadNodeStatusRepo
 	hydrator              hydrator.Interface
 	wfArchive             sqldb.WorkflowArchive
