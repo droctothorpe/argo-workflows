@@ -4067,7 +4067,7 @@ type Memoize struct {
 	Cache *Cache `json:"cache,omitempty" protobuf:"bytes,2,opt,name=cache"`
 	// MaxAge is the maximum age (e.g. "180s", "24h") of an entry that is still considered valid. If an entry is older
 	// than the MaxAge, it will be ignored. When omitted the controller's DefaultMemoizationMaxAge is used; if that is
-	// also unset entries never expire (they are only removed by GC).
+	// also unset the built-in default of 2160h (90 days) applies.
 	// +optional
 	MaxAge string `json:"maxAge,omitempty" protobuf:"bytes,3,opt,name=maxAge"`
 }

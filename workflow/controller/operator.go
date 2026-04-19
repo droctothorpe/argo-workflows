@@ -2265,9 +2265,9 @@ func (woc *wfOperationCtx) executeTemplate(ctx context.Context, nodeName string,
 			hit := entry.Hit()
 			var outputs *wfv1.Outputs
 
-			// Resolve effective maxAge: template-level string overrides controller-level TTL default.
+			// Resolve effective maxAge: template-level > controller default > built-in default (3 months).
+			const defaultMemoizationMaxAge = 90 * 24 * time.Hour
 			var maxAgeDuration time.Duration
-			var hasMaxAge bool
 			if processedTmpl.Memoize.MaxAge != "" {
 				d, parseErr := time.ParseDuration(processedTmpl.Memoize.MaxAge)
 				if parseErr != nil {
@@ -2275,22 +2275,18 @@ func (woc *wfOperationCtx) executeTemplate(ctx context.Context, nodeName string,
 					return woc.initializeNodeOrMarkError(ctx, node, nodeName, templateScope, orgTmpl, opts.boundaryID, opts.nodeFlag, maxAgeErr), maxAgeErr
 				}
 				maxAgeDuration = d
-				hasMaxAge = true
 			} else if woc.controller.Config.Memoization != nil && woc.controller.Config.Memoization.DefaultMaxAge != 0 {
 				maxAgeDuration = time.Duration(woc.controller.Config.Memoization.DefaultMaxAge)
-				hasMaxAge = true
+			} else {
+				maxAgeDuration = defaultMemoizationMaxAge
 			}
 
-			if hasMaxAge {
-				maxAgeOutputs, ok := entry.GetOutputsWithMaxAge(maxAgeDuration)
-				if !ok {
-					// The outputs are expired, so this cache entry is not hit
-					hit = false
-				}
-				outputs = maxAgeOutputs
-			} else {
-				outputs = entry.GetOutputs()
+			maxAgeOutputs, ok := entry.GetOutputsWithMaxAge(maxAgeDuration)
+			if !ok {
+				// The outputs are expired, so this cache entry is not hit
+				hit = false
 			}
+			outputs = maxAgeOutputs
 
 			memoizationStatus := &wfv1.MemoizationStatus{
 				Hit:       hit,
