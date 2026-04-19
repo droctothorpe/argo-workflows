@@ -1163,6 +1163,11 @@ spec:
                           - container
                           - endpoint
                           type: object
+                        checksum:
+                          description: |-
+                            Checksum is the SHA-256 checksum of the artifact content, computed at save time.
+                            Format: "sha256:<hex>". Set on output artifacts; used as a stable identity for memoization cache keys.
+                          type: string
                         deleted:
                           description: Has this been deleted?
                           type: boolean
@@ -2474,6 +2479,11 @@ spec:
                                 - container
                                 - endpoint
                                 type: object
+                              checksum:
+                                description: |-
+                                  Checksum is the SHA-256 checksum of the artifact content, computed at save time.
+                                  Format: "sha256:<hex>". Set on output artifacts; used as a stable identity for memoization cache keys.
+                                type: string
                               deleted:
                                 description: Has this been deleted?
                                 type: boolean
@@ -6865,6 +6875,8 @@ spec:
                                         - container
                                         - endpoint
                                         type: object
+                                      checksum:
+                                        type: string
                                       deleted:
                                         type: boolean
                                       from:
@@ -7533,6 +7545,8 @@ spec:
                                               - container
                                               - endpoint
                                               type: object
+                                            checksum:
+                                              type: string
                                             deleted:
                                               type: boolean
                                             from:
@@ -8269,6 +8283,8 @@ spec:
                                 - container
                                 - endpoint
                                 type: object
+                              checksum:
+                                type: string
                               deleted:
                                 type: boolean
                               from:
@@ -9673,6 +9689,8 @@ spec:
                               - container
                               - endpoint
                               type: object
+                            checksum:
+                              type: string
                             deleted:
                               type: boolean
                             from:
@@ -10445,6 +10463,8 @@ spec:
                               - container
                               - endpoint
                               type: object
+                            checksum:
+                              type: string
                             deleted:
                               type: boolean
                             from:
@@ -11129,6 +11149,8 @@ spec:
                                 - container
                                 - endpoint
                                 type: object
+                              checksum:
+                                type: string
                               deleted:
                                 type: boolean
                               from:
@@ -13310,6 +13332,8 @@ spec:
                                       - container
                                       - endpoint
                                       type: object
+                                    checksum:
+                                      type: string
                                     deleted:
                                       type: boolean
                                     from:
@@ -13972,6 +13996,8 @@ spec:
                                             - container
                                             - endpoint
                                             type: object
+                                          checksum:
+                                            type: string
                                           deleted:
                                             type: boolean
                                           from:
@@ -20773,6 +20799,11 @@ spec:
                                           - container
                                           - endpoint
                                           type: object
+                                        checksum:
+                                          description: |-
+                                            Checksum is the SHA-256 checksum of the artifact content, computed at save time.
+                                            Format: "sha256:<hex>". Set on output artifacts; used as a stable identity for memoization cache keys.
+                                          type: string
                                         deleted:
                                           description: Has this been deleted?
                                           type: boolean
@@ -22104,6 +22135,11 @@ spec:
                                                 - container
                                                 - endpoint
                                                 type: object
+                                              checksum:
+                                                description: |-
+                                                  Checksum is the SHA-256 checksum of the artifact content, computed at save time.
+                                                  Format: "sha256:<hex>". Set on output artifacts; used as a stable identity for memoization cache keys.
+                                                type: string
                                               deleted:
                                                 description: Has this been deleted?
                                                 type: boolean
@@ -23596,6 +23632,11 @@ spec:
                                   - container
                                   - endpoint
                                   type: object
+                                checksum:
+                                  description: |-
+                                    Checksum is the SHA-256 checksum of the artifact content, computed at save time.
+                                    Format: "sha256:<hex>". Set on output artifacts; used as a stable identity for memoization cache keys.
+                                  type: string
                                 deleted:
                                   description: Has this been deleted?
                                   type: boolean
@@ -26374,6 +26415,11 @@ spec:
                                 - container
                                 - endpoint
                                 type: object
+                              checksum:
+                                description: |-
+                                  Checksum is the SHA-256 checksum of the artifact content, computed at save time.
+                                  Format: "sha256:<hex>". Set on output artifacts; used as a stable identity for memoization cache keys.
+                                type: string
                               deleted:
                                 description: Has this been deleted?
                                 type: boolean
@@ -27757,6 +27803,11 @@ spec:
                                 - container
                                 - endpoint
                                 type: object
+                              checksum:
+                                description: |-
+                                  Checksum is the SHA-256 checksum of the artifact content, computed at save time.
+                                  Format: "sha256:<hex>". Set on output artifacts; used as a stable identity for memoization cache keys.
+                                type: string
                               deleted:
                                 description: Has this been deleted?
                                 type: boolean
@@ -29029,6 +29080,11 @@ spec:
                                   - container
                                   - endpoint
                                   type: object
+                                checksum:
+                                  description: |-
+                                    Checksum is the SHA-256 checksum of the artifact content, computed at save time.
+                                    Format: "sha256:<hex>". Set on output artifacts; used as a stable identity for memoization cache keys.
+                                  type: string
                                 deleted:
                                   description: Has this been deleted?
                                   type: boolean
@@ -33569,6 +33625,11 @@ spec:
                                         - container
                                         - endpoint
                                         type: object
+                                      checksum:
+                                        description: |-
+                                          Checksum is the SHA-256 checksum of the artifact content, computed at save time.
+                                          Format: "sha256:<hex>". Set on output artifacts; used as a stable identity for memoization cache keys.
+                                        type: string
                                       deleted:
                                         description: Has this been deleted?
                                         type: boolean
@@ -34876,6 +34937,11 @@ spec:
                                               - container
                                               - endpoint
                                               type: object
+                                            checksum:
+                                              description: |-
+                                                Checksum is the SHA-256 checksum of the artifact content, computed at save time.
+                                                Format: "sha256:<hex>". Set on output artifacts; used as a stable identity for memoization cache keys.
+                                              type: string
                                             deleted:
                                               description: Has this been deleted?
                                               type: boolean
@@ -41163,6 +41229,8 @@ spec:
                                 - container
                                 - endpoint
                                 type: object
+                              checksum:
+                                type: string
                               deleted:
                                 type: boolean
                               from:
@@ -41835,6 +41903,8 @@ spec:
                                 - container
                                 - endpoint
                                 type: object
+                              checksum:
+                                type: string
                               deleted:
                                 type: boolean
                               from:
@@ -42528,6 +42598,8 @@ spec:
                           - container
                           - endpoint
                           type: object
+                        checksum:
+                          type: string
                         deleted:
                           type: boolean
                         from:

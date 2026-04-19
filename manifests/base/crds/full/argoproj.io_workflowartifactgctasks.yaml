@@ -668,6 +668,8 @@ spec:
                             - container
                             - endpoint
                             type: object
+                          checksum:
+                            type: string
                           deleted:
                             type: boolean
                           from:
