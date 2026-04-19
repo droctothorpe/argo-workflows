@@ -1,9 +1,7 @@
----
+# This is an auto-generated file. DO NOT EDIT
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  annotations:
-    controller-gen.kubebuilder.io/version: v0.18.0
   name: workfloweventbindings.argoproj.io
 spec:
   group: argoproj.io
@@ -1265,6 +1263,25 @@ spec:
                   metadata:
                     description: Metadata optional means to customize select fields
                       of the workflow metadata
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      finalizers:
+                        items:
+                          type: string
+                        type: array
+                      generateName:
+                        type: string
+                      labels:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      name:
+                        type: string
+                      namespace:
+                        type: string
                     type: object
                   workflowTemplateRef:
                     description: WorkflowTemplateRef the workflow template to submit

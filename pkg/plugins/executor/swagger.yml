@@ -121,11 +121,6 @@ definitions:
                     Checksum is the SHA-256 checksum of the artifact content, computed at save time.
                     Format: "sha256:<hex>". Set on output artifacts; used as a stable identity for memoization cache keys.
                 type: string
-            checksum:
-                description: |-
-                    Checksum is the SHA-256 checksum of the artifact content, computed at save time.
-                    Format: "sha256:<hex>". Set on output artifacts; used as a stable identity for memoization cache keys.
-                type: string
             deleted:
                 description: Has this been deleted?
                 type: boolean
@@ -243,6 +238,11 @@ definitions:
                 $ref: '#/definitions/ArtifactoryArtifact'
             azure:
                 $ref: '#/definitions/AzureArtifact'
+            checksum:
+                description: |-
+                    Checksum is the SHA-256 checksum of the artifact content, computed at save time.
+                    Format: "sha256:<hex>". Set on output artifacts; used as a stable identity for memoization cache keys.
+                type: string
             deleted:
                 description: Has this been deleted?
                 type: boolean
@@ -2427,11 +2427,13 @@ definitions:
                 description: |-
                     Key is the key to use as the caching key. If not set, a deterministic key
                     is derived from the template name and all resolved input parameters and artifacts.
+                    +optional
                 type: string
             maxAge:
                 description: |-
                     MaxAge is the maximum age (e.g. "180s", "24h") of an entry that is still considered valid. If an entry is older
                     than the MaxAge, it will be ignored. When omitted, entries are valid until removed by the GC (see CacheTTL).
+                    +optional
                 type: string
         title: Memoize enables caching for the Outputs of the template.
         type: object

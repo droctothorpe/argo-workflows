@@ -5947,9 +5947,6 @@ spec:
                           type: string
                         maxAge:
                           type: string
-                      required:
-                      - cache
-                      - maxAge
                       type: object
                     metadata:
                       properties:
