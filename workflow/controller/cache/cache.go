@@ -124,6 +124,7 @@ func (cf *cacheFactory) GetCache(ct Type, name string) MemoizationCache {
 	switch ct {
 	case ConfigMapCache:
 		var c MemoizationCache
+		//nolint:gocritic
 		if cf.sessionProxy != nil {
 			var err error
 			c, err = newSQLDBCache(cf.namespace, name, cf.sessionProxy, cf.tableName)

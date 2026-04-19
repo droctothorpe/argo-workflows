@@ -252,7 +252,7 @@ func sortedArtifactNames(arts []wfv1.Artifact) []wfv1.Artifact {
 // artifact's storage key (path). Returns an error if none of these are
 // available; callers should not proceed with key derivation in this case as
 // using the artifact name alone would risk false cache hits.
-func resolveArtifactIdentity(ctx context.Context, woc *wfOperationCtx, ri *wocResourceInterface, art *wfv1.Artifact) (string, error) {
+func resolveArtifactIdentity(ctx context.Context, _ *wfOperationCtx, ri *wocResourceInterface, art *wfv1.Artifact) (string, error) {
 	driver, err := artifacts.NewDriver(ctx, art, ri)
 	if err != nil {
 		// Fall back to storage key if we can't build the driver.
