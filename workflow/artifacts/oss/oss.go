@@ -621,3 +621,27 @@ func (ossDriver *ArtifactDriver) IsDirectory(ctx context.Context, artifact *wfv1
 	}
 	return isDir, nil
 }
+
+var _ common.ETagProvider = &ArtifactDriver{}
+
+// GetETag returns the OSS ETag for the artifact without downloading it.
+// Returns ("", nil) for directory keys (those ending in "/").
+func (ossDriver *ArtifactDriver) GetETag(ctx context.Context, artifact *wfv1.Artifact) (string, error) {
+	objectName := artifact.OSS.Key
+	if strings.HasSuffix(objectName, "/") {
+		return "", nil
+	}
+	osscli, err := ossDriver.newOSSClient(ctx)
+	if err != nil {
+		return "", fmt.Errorf("OSS GetETag: create client: %w", err)
+	}
+	bucket, err := osscli.Bucket(artifact.OSS.Bucket)
+	if err != nil {
+		return "", fmt.Errorf("OSS GetETag: get bucket: %w", err)
+	}
+	header, err := bucket.GetObjectDetailedMeta(objectName)
+	if err != nil {
+		return "", fmt.Errorf("OSS GetETag: get object meta: %w", err)
+	}
+	return strings.Trim(header.Get("ETag"), "\""), nil
+}

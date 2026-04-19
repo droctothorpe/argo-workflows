@@ -82,6 +82,15 @@ func (g *ArtifactDriver) Save(ctx context.Context, path string, artifact *wfv1.A
 	return argoerrors.New(argoerrors.CodeBadRequest, "git output artifacts unsupported")
 }
 
+var _ common.ETagProvider = &ArtifactDriver{}
+
+// GetETag returns the git revision as a stable content identifier.
+// If Revision is a full commit SHA it is a true content hash; if it is a branch name
+// it acts as a change detector (it changes when the branch HEAD changes after a new clone).
+func (g *ArtifactDriver) GetETag(_ context.Context, artifact *wfv1.Artifact) (string, error) {
+	return artifact.Git.Revision, nil
+}
+
 // Delete is unsupported for git artifacts
 func (g *ArtifactDriver) Delete(ctx context.Context, s *wfv1.Artifact) error {
 	return common.ErrDeleteNotSupported

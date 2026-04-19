@@ -94,3 +94,11 @@ func (d *driver) IsDirectory(ctx context.Context, artifact *wfv1.Artifact) (bool
 		Info(ctx, "Check if directory")
 	return isDir, err
 }
+
+// GetETag delegates to the wrapped driver if it implements ETagProvider; otherwise returns ("", nil).
+func (d *driver) GetETag(ctx context.Context, artifact *wfv1.Artifact) (string, error) {
+	if p, ok := d.ArtifactDriver.(common.ETagProvider); ok {
+		return p.GetETag(ctx, artifact)
+	}
+	return "", nil
+}

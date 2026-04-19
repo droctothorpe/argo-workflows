@@ -72,6 +72,9 @@ type Client interface {
 
 	// MakeBucket creates a bucket with name bucketName and options opts
 	MakeBucket(bucketName string, opts minio.MakeBucketOptions) error
+
+	// ETag returns the ETag of the object at key in bucket, or ("", nil) if the object is a directory.
+	ETag(bucket, key string) (string, error)
 }
 
 type EncryptOpts struct {
@@ -823,4 +826,32 @@ func parseKMSEncCntx(kmsEncCntx string) (*string, error) {
 	parsedKMSEncryptionContext := base64.StdEncoding.EncodeToString(jsonKMSEncryptionContext)
 
 	return &parsedKMSEncryptionContext, nil
+}
+
+// ETag returns the ETag of the object at key in bucket.
+// Returns ("", nil) for directory keys (those ending in "/").
+func (s *s3client) ETag(bucket, key string) (string, error) {
+	if strings.HasSuffix(key, "/") {
+		return "", nil
+	}
+	encOpts, err := s.EncryptOpts.buildServerSideEnc(bucket, key)
+	if err != nil {
+		return "", err
+	}
+	info, err := s.minioClient.StatObject(s.ctx, bucket, key, minio.StatObjectOptions{ServerSideEncryption: encOpts})
+	if err != nil {
+		return "", fmt.Errorf("s3 stat object: %w", err)
+	}
+	return info.ETag, nil
+}
+
+var _ artifactscommon.ETagProvider = &ArtifactDriver{}
+
+// GetETag returns the S3 ETag for the artifact without downloading it.
+func (s3Driver *ArtifactDriver) GetETag(ctx context.Context, artifact *wfv1.Artifact) (string, error) {
+	s3cli, err := s3Driver.newClient(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to create S3 client: %w", err)
+	}
+	return s3cli.ETag(artifact.S3.Bucket, artifact.S3.Key)
 }

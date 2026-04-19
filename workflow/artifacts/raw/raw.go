@@ -2,6 +2,8 @@ package raw
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -37,6 +39,14 @@ func (a *ArtifactDriver) OpenStream(ctx context.Context, art *wfv1.Artifact) (io
 // Save is unsupported for raw output artifacts
 func (a *ArtifactDriver) Save(ctx context.Context, path string, artifact *wfv1.Artifact) error {
 	return errors.Errorf(errors.CodeBadRequest, "Raw output artifacts unsupported")
+}
+
+var _ common.ETagProvider = &ArtifactDriver{}
+
+// GetETag returns the SHA-256 of the inline artifact data as a stable content identifier.
+func (a *ArtifactDriver) GetETag(_ context.Context, artifact *wfv1.Artifact) (string, error) {
+	h := sha256.Sum256([]byte(artifact.Raw.Data))
+	return hex.EncodeToString(h[:]), nil
 }
 
 // Delete is unsupported for raw output artifacts

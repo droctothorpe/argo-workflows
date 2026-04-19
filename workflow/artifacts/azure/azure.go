@@ -484,3 +484,26 @@ func generatePutTasks(blobNamePrefix, rootPath string) chan uploadTask {
 	}()
 	return uploadTasks
 }
+
+var _ artifactscommon.ETagProvider = &ArtifactDriver{}
+
+// GetETag returns the Azure Blob ETag for the artifact without downloading it.
+// Returns ("", nil) for directory blobs (paths ending in "/").
+func (azblobDriver *ArtifactDriver) GetETag(ctx context.Context, artifact *wfv1.Artifact) (string, error) {
+	blobName := artifact.Azure.Blob
+	if strings.HasSuffix(blobName, "/") {
+		return "", nil
+	}
+	containerClient, err := azblobDriver.newAzureContainerClient(ctx)
+	if err != nil {
+		return "", fmt.Errorf("Azure GetETag: create client: %w", err)
+	}
+	props, err := containerClient.NewBlobClient(blobName).GetProperties(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("Azure GetETag: get properties: %w", err)
+	}
+	if props.ETag == nil {
+		return "", nil
+	}
+	return string(*props.ETag), nil
+}

@@ -375,3 +375,25 @@ func (h *ArtifactDriver) ListObjects(ctx context.Context, artifact *wfv1.Artifac
 func (h *ArtifactDriver) IsDirectory(ctx context.Context, artifact *wfv1.Artifact) (bool, error) {
 	return false, argoerrors.New(argoerrors.CodeNotImplemented, "IsDirectory currently unimplemented for GCS")
 }
+
+var _ common.ETagProvider = &ArtifactDriver{}
+
+// GetETag returns the GCS generation number for the artifact as a string.
+// The generation number increments on every content change and is a reliable change detector.
+// Returns ("", nil) for directory keys (those ending in "/").
+func (h *ArtifactDriver) GetETag(ctx context.Context, artifact *wfv1.Artifact) (string, error) {
+	key := filepath.Clean(artifact.GCS.Key)
+	if strings.HasSuffix(artifact.GCS.Key, "/") {
+		return "", nil
+	}
+	client, err := h.newGCSClient(ctx)
+	if err != nil {
+		return "", fmt.Errorf("GCS GetETag: create client: %w", err)
+	}
+	defer client.Close()
+	attrs, err := client.Bucket(artifact.GCS.Bucket).Object(key).Attrs(ctx)
+	if err != nil {
+		return "", fmt.Errorf("GCS GetETag: get attrs: %w", err)
+	}
+	return fmt.Sprintf("%d", attrs.Generation), nil
+}

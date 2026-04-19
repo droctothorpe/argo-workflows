@@ -127,6 +127,10 @@ func (s *mockClient) MakeBucket(bucketName string, opts minio.MakeBucketOptions)
 	return s.getMockedErr("MakeBucket")
 }
 
+func (s *mockClient) ETag(bucket, key string) (string, error) {
+	return "", s.getMockedErr("ETag")
+}
+
 func TestOpenStreamS3Artifact(t *testing.T) {
 	ctx := logging.TestContext(t.Context())
 
