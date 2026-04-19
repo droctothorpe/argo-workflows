@@ -23,6 +23,7 @@
 512Mi
 5m
 5xx
+64-character
 8Ki
 90m
 @filename
@@ -55,6 +56,7 @@ Dataflow
 DevOps
 Devenv
 Dex
+ETag
 EditorConfig
 EtcD
 EventRouter
@@ -119,6 +121,7 @@ Risc-V
 Roadmap
 RoleBinding
 SDKs
+SHA-256
 SageMaker
 ServiceAccount
 Sharding
@@ -158,9 +161,8 @@ boolean
 booleans
 buildkit
 changelog
-codebase
-64-character
 checksums
+codebase
 config
 cpu
 cron
@@ -169,11 +171,10 @@ dependabot
 dev
 devenv
 dockershim
-driver-provided
 docs
+driver-provided
 dropdown
 e.g.
-ETag
 e2e
 entrypoint
 enum
@@ -186,12 +187,12 @@ filename
 finalizer
 gRPC
 gitops
-hashed
-hex
 goroutine
 goroutines
 govaluate
 gzipped
+hashed
+hex
 i.e.
 idempotence
 instantiator
@@ -244,7 +245,6 @@ runtime
 runtimes
 s3
 sandboxed
-SHA-256
 shortcodes
 stateful
 stderr

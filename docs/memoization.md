@@ -148,9 +148,9 @@ When `cache` is omitted entirely, entries are stored under the `"default"` group
 1. If you see errors like `error creating cache entry: ConfigMap \"reuse-task\" is invalid: []: Too long: must have at most 1048576 characters`,
    this is due to [the 1MB limit placed on the size of `ConfigMap`](https://github.com/kubernetes/kubernetes/issues/19781).
    Here are a couple of ways that might help resolve this:
-    * Delete the existing `ConfigMap` cache or switch to use a different cache.
-    * Reduce the size of the output parameters for the nodes that are being memoized.
-    * Split your cache into different memoization keys and cache names so that each cache entry is small.
-    * Switch to the SQL database backend which has no size limit.
+    - Delete the existing `ConfigMap` cache or switch to use a different cache.
+    - Reduce the size of the output parameters for the nodes that are being memoized.
+    - Split your cache into different memoization keys and cache names so that each cache entry is small.
+    - Switch to the SQL database backend which has no size limit.
 1. My step isn't getting memoized, why not?
    If you are running workflows <3.5 ensure that you have specified at least one output on the step.
