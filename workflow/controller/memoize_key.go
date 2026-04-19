@@ -14,35 +14,58 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	wfv1 "github.com/argoproj/argo-workflows/v4/pkg/apis/workflow/v1alpha1"
+	"github.com/argoproj/argo-workflows/v4/util/logging"
 	"github.com/argoproj/argo-workflows/v4/workflow/artifacts"
 	artifactcommon "github.com/argoproj/argo-workflows/v4/workflow/artifacts/common"
 )
 
 // wocResourceInterface adapts the controller's kubeclientset to the resource.Interface
 // expected by artifacts.NewDriver, scoped to the workflow's namespace.
+// It caches fetched secrets and configmaps for the lifetime of the wfOperationCtx
+// to avoid repeated API calls when resolving multiple artifacts.
 type wocResourceInterface struct {
-	woc *wfOperationCtx
+	woc        *wfOperationCtx
+	secrets    map[string]*apiv1.Secret
+	configmaps map[string]*apiv1.ConfigMap
+}
+
+func newWocResourceInterface(woc *wfOperationCtx) *wocResourceInterface {
+	return &wocResourceInterface{
+		woc:        woc,
+		secrets:    make(map[string]*apiv1.Secret),
+		configmaps: make(map[string]*apiv1.ConfigMap),
+	}
 }
 
 func (r *wocResourceInterface) GetSecret(ctx context.Context, name, key string) (string, error) {
-	secret, err := r.woc.controller.kubeclientset.CoreV1().Secrets(r.woc.wf.Namespace).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return "", fmt.Errorf("get secret %s/%s: %w", r.woc.wf.Namespace, name, err)
-	}
-	val, ok := secret.Data[key]
+	secret, ok := r.secrets[name]
 	if !ok {
+		var err error
+		secret, err = r.woc.controller.kubeclientset.CoreV1().Secrets(r.woc.wf.Namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return "", fmt.Errorf("get secret %s/%s: %w", r.woc.wf.Namespace, name, err)
+		}
+		r.secrets[name] = secret
+	}
+	val, found := secret.Data[key]
+	if !found {
 		return "", fmt.Errorf("secret %s/%s has no key %q", r.woc.wf.Namespace, name, key)
 	}
 	return string(val), nil
 }
 
 func (r *wocResourceInterface) GetConfigMapKey(ctx context.Context, name, key string) (string, error) {
-	cm, err := r.woc.controller.kubeclientset.CoreV1().ConfigMaps(r.woc.wf.Namespace).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return "", fmt.Errorf("get configmap %s/%s: %w", r.woc.wf.Namespace, name, err)
-	}
-	val, ok := cm.Data[key]
+	cm, ok := r.configmaps[name]
 	if !ok {
+		var err error
+		cm, err = r.woc.controller.kubeclientset.CoreV1().ConfigMaps(r.woc.wf.Namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return "", fmt.Errorf("get configmap %s/%s: %w", r.woc.wf.Namespace, name, err)
+		}
+		r.configmaps[name] = cm
+	}
+	val, found := cm.Data[key]
+	if !found {
 		return "", fmt.Errorf("configmap %s/%s has no key %q", r.woc.wf.Namespace, name, key)
 	}
 	return val, nil
@@ -75,9 +98,9 @@ func memoizationKey(ctx context.Context, woc *wfOperationCtx, tmpl *wfv1.Templat
 		return tmpl.Memoize.Key, nil
 	}
 
-	ri := &wocResourceInterface{woc: woc}
+	ri := newWocResourceInterface(woc)
 	identityFn := func(ctx context.Context, art *wfv1.Artifact) (string, error) {
-		return resolveArtifactIdentity(ctx, woc, ri, art)
+		return resolveArtifactIdentity(ctx, ri, art)
 	}
 
 	return buildMemoizationKey(ctx, tmpl, identityFn)
@@ -249,18 +272,22 @@ func sortedArtifactNames(arts []wfv1.Artifact) []wfv1.Artifact {
 
 // resolveArtifactIdentity returns the best available content identity for an
 // artifact: its saved checksum, an ETag from the storage backend, or the
-// artifact's storage key (path). Returns an error if none of these are
-// available; callers should not proceed with key derivation in this case as
-// using the artifact name alone would risk false cache hits.
-func resolveArtifactIdentity(ctx context.Context, _ *wfOperationCtx, ri *wocResourceInterface, art *wfv1.Artifact) (string, error) {
+// artifact's storage key (path). Soft fallbacks (e.g. driver unavailable,
+// checksum fetch failed) log a warning and return the fallback key with a nil
+// error so that key derivation proceeds with reduced precision (possible false
+// miss, never false hit). A hard error is returned only when no identity at
+// all can be determined.
+func resolveArtifactIdentity(ctx context.Context, ri *wocResourceInterface, art *wfv1.Artifact) (string, error) {
+	logger := logging.RequireLoggerFromContext(ctx)
+
 	driver, err := artifacts.NewDriver(ctx, art, ri)
 	if err != nil {
-		// Fall back to storage key if we can't build the driver.
 		key, keyErr := art.GetKey()
 		if keyErr != nil {
 			return "", fmt.Errorf("new driver: %w; get key: %w", err, keyErr)
 		}
-		return key, fmt.Errorf("new driver: %w", err)
+		logger.WithError(err).WithField("artifact", art.Name).Warn(ctx, "Could not create artifact driver; falling back to storage path for cache key")
+		return key, nil
 	}
 
 	checksum, err := artifactcommon.ResolveChecksum(ctx, art, driver)
@@ -269,7 +296,8 @@ func resolveArtifactIdentity(ctx context.Context, _ *wfOperationCtx, ri *wocReso
 		if keyErr != nil {
 			return "", fmt.Errorf("resolve checksum: %w; get key: %w", err, keyErr)
 		}
-		return key, fmt.Errorf("resolve checksum: %w", err)
+		logger.WithError(err).WithField("artifact", art.Name).Warn(ctx, "Could not resolve artifact checksum; falling back to storage path for cache key")
+		return key, nil
 	}
 	if checksum != "" {
 		return checksum, nil

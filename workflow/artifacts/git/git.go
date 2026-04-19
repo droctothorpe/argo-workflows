@@ -84,11 +84,20 @@ func (g *ArtifactDriver) Save(ctx context.Context, path string, artifact *wfv1.A
 
 var _ common.ETagProvider = &ArtifactDriver{}
 
-// GetETag returns the git revision as a stable content identifier.
-// If Revision is a full commit SHA it is a true content hash; if it is a branch name
-// it acts as a change detector (it changes when the branch HEAD changes after a new clone).
+// fullSHARegex matches a 40-character lowercase hex string (full git commit SHA).
+var fullSHARegex = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
+// GetETag returns the git revision as a stable content identifier, but only
+// when the revision is a full 40-character commit SHA (a true content hash).
+// Branch names, tags, and short SHAs are not stable identifiers — the same
+// ref can point to different content over time — so ("", nil) is returned
+// for those, causing the caller to fall back to path-identity.
 func (g *ArtifactDriver) GetETag(_ context.Context, artifact *wfv1.Artifact) (string, error) {
-	return artifact.Git.Revision, nil
+	rev := artifact.Git.Revision
+	if fullSHARegex.MatchString(rev) {
+		return rev, nil
+	}
+	return "", nil
 }
 
 // Delete is unsupported for git artifacts

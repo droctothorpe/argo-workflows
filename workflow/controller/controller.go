@@ -137,6 +137,7 @@ type WorkflowController struct {
 	sessionProxy          *utilsqldb.SessionProxy
 	memoSessionProxy      *utilsqldb.SessionProxy
 	memoMigrated          bool
+	memoLock              gosync.RWMutex
 	offloadNodeStatusRepo sqldb.OffloadNodeStatusRepo
 	hydrator              hydrator.Interface
 	wfArchive             sqldb.WorkflowArchive
@@ -732,44 +733,50 @@ func (wfc *WorkflowController) memoizationCacheGarbageCollector(ctx context.Cont
 	logger = logger.WithField("component", "memo_cache_garbage_collector")
 	ctx = logging.WithLogger(ctx, logger)
 
-	memoCfg := wfc.Config.Memoization
-	if memoCfg == nil || wfc.memoSessionProxy == nil {
-		logger.Info(ctx, "Memoization DB not configured - cache GC disabled")
-		return
-	}
-
 	const defaultCacheTTL = 90 * 24 * time.Hour // 3 months
-	ttl := time.Duration(memoCfg.CacheTTL)
-	if ttl == 0 {
-		ttl = defaultCacheTTL
-	}
-	if ttl < 0 {
-		logger.Info(ctx, "Memoization cache TTL is negative - cache GC disabled")
-		return
-	}
 
 	periodicity := env.LookupEnvDurationOr(ctx, "MEMO_CACHE_GC_PERIOD", 24*time.Hour)
 	if periodicity <= 0 {
 		logger.Info(ctx, "MEMO_CACHE_GC_PERIOD is zero or negative - cache GC disabled")
 		return
 	}
-	logger.WithFields(logging.Fields{"ttl": ttl, "periodicity": periodicity}).Info(ctx, "Starting memoization cache GC")
+	logger.Info(ctx, "Memoization cache GC goroutine started; will check config each tick")
 
 	ticker := time.NewTicker(periodicity)
 	defer ticker.Stop()
-	cfg := memodb.ConfigFromConfig(memoCfg)
-	queries, err := memodb.NewQueries(cfg.TableName, wfc.memoSessionProxy.DBType())
-	if err != nil {
-		logger.WithError(err).Error(ctx, "Invalid memoization cache table name; GC disabled")
-		return
-	}
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			wfc.memoLock.RLock()
+			memoCfg := wfc.Config.Memoization
+			sp := wfc.memoSessionProxy
+			wfc.memoLock.RUnlock()
+
+			if memoCfg == nil || sp == nil {
+				logger.Debug(ctx, "Memoization DB not configured or unavailable; skipping GC tick")
+				continue
+			}
+
+			ttl := time.Duration(memoCfg.CacheTTL)
+			if ttl == 0 {
+				ttl = defaultCacheTTL
+			}
+			if ttl < 0 {
+				logger.Debug(ctx, "Memoization cache TTL is negative; skipping GC tick")
+				continue
+			}
+
+			cfg := memodb.ConfigFromConfig(memoCfg)
+			queries, err := memodb.NewQueries(cfg.TableName, sp.DBType())
+			if err != nil {
+				logger.WithError(err).Error(ctx, "Invalid memoization cache table name; skipping GC tick")
+				continue
+			}
+
 			logger.Info(ctx, "Performing memoization cache GC")
-			n, err := queries.Prune(ctx, wfc.memoSessionProxy, ttl)
+			n, err := queries.Prune(ctx, sp, ttl)
 			if err != nil {
 				logger.WithError(err).Error(ctx, "Failed to prune memoization cache")
 			} else {

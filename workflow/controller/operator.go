@@ -2236,12 +2236,15 @@ func (woc *wfOperationCtx) executeTemplate(ctx context.Context, nodeName string,
 			// Resolve effective cache name: use the user-supplied configMap name when set,
 			// otherwise fall back to the SQL backend with a "default" bucket.
 			var cacheName string
-			//nolint:gocritic
-			if processedTmpl.Memoize.Cache != nil {
+			woc.controller.memoLock.RLock()
+			hasSQLBackend := woc.controller.memoSessionProxy != nil
+			woc.controller.memoLock.RUnlock()
+			switch {
+			case processedTmpl.Memoize.Cache != nil:
 				cacheName = processedTmpl.Memoize.Cache.ConfigMap.Name
-			} else if woc.controller.memoSessionProxy != nil {
+			case hasSQLBackend:
 				cacheName = "default"
-			} else {
+			default:
 				cacheErr := fmt.Errorf("memoize.cache not set and no SQL memoization is configured; set memoize.cache.configMap.name or configure memoization in the controller configmap")
 				return woc.initializeNodeOrMarkError(ctx, node, nodeName, templateScope, orgTmpl, opts.boundaryID, opts.nodeFlag, cacheErr), cacheErr
 			}
@@ -2251,6 +2254,16 @@ func (woc *wfOperationCtx) executeTemplate(ctx context.Context, nodeName string,
 				// SQL was configured but is currently unavailable; skip caching and proceed as a
 				// cache miss so the workflow is not blocked by a transient database failure.
 				woc.log.WithFields(logging.Fields{"cacheName": cacheName}).Warn(ctx, "Memoization cache unavailable (SQL backend may be down); proceeding without caching")
+				if node == nil {
+					memoizationStatus := &wfv1.MemoizationStatus{
+						Hit:       false,
+						Key:       processedTmpl.Memoize.Key,
+						CacheName: cacheName,
+					}
+					_, node = woc.initializeCacheNode(ctx, nodeName, processedTmpl, templateScope, orgTmpl, opts.boundaryID, memoizationStatus, opts.nodeFlag)
+					woc.wf.Status.Nodes.Set(ctx, node.ID, *node)
+					woc.updated = true
+				}
 			} else {
 				// Resolve the effective cache key: use the user-supplied key when set,
 				// otherwise derive a deterministic key from the template name and all
@@ -2833,18 +2846,19 @@ func (woc *wfOperationCtx) initializeExecutableNode(ctx context.Context, nodeNam
 		node.Inputs = executeTmpl.Inputs.DeepCopy()
 	}
 
-	// Set the MemoizationStatus
-	if node.MemoizationStatus == nil && executeTmpl.Memoize != nil {
+	// Set the MemoizationStatus only when the user explicitly supplied a key.
+	// When key is auto-derived, executeTemplate sets MemoizationStatus with the
+	// computed effectiveKey before reaching this point.
+	if node.MemoizationStatus == nil && executeTmpl.Memoize != nil && executeTmpl.Memoize.Key != "" {
 		cacheName := ""
 		if executeTmpl.Memoize.Cache != nil {
 			cacheName = executeTmpl.Memoize.Cache.ConfigMap.Name
 		}
-		memoizationStatus := &wfv1.MemoizationStatus{
+		node.MemoizationStatus = &wfv1.MemoizationStatus{
 			Hit:       false,
 			Key:       executeTmpl.Memoize.Key,
 			CacheName: cacheName,
 		}
-		node.MemoizationStatus = memoizationStatus
 	}
 
 	if nodeType == wfv1.NodeTypeSuspend {

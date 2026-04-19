@@ -98,7 +98,18 @@ func (d *driver) IsDirectory(ctx context.Context, artifact *wfv1.Artifact) (bool
 // GetETag delegates to the wrapped driver if it implements ETagProvider; otherwise returns ("", nil).
 func (d *driver) GetETag(ctx context.Context, artifact *wfv1.Artifact) (string, error) {
 	if p, ok := d.ArtifactDriver.(common.ETagProvider); ok {
-		return p.GetETag(ctx, artifact)
+		log := logging.RequireLoggerFromContext(ctx)
+		log.WithField("driver", d.ArtifactDriver).Info(ctx, "Getting ETag")
+		t := time.Now()
+		key, _ := artifact.GetKey()
+		etag, err := p.GetETag(ctx, artifact)
+		log.WithField("artifactName", artifact.Name).
+			WithField("key", key).
+			WithField("etag", etag).
+			WithField("duration", time.Since(t)).
+			WithError(err).
+			Info(ctx, "Get ETag")
+		return etag, err
 	}
 	return "", nil
 }
