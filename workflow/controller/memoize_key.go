@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
 	"strings"
 
+	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	wfv1 "github.com/argoproj/argo-workflows/v4/pkg/apis/workflow/v1alpha1"
@@ -98,7 +100,8 @@ func buildMemoizationKey(ctx context.Context, tmpl *wfv1.Template, artifactIdent
 }
 
 // buildManifest creates a deterministic string manifest from the template's
-// name and resolved inputs. The identityFn is called for each input artifact.
+// name, executor spec (image, command, script, etc.), and resolved inputs.
+// The identityFn is called for each input artifact.
 // This pure function contains no I/O and is directly unit-testable.
 func buildManifest(tmpl *wfv1.Template, identityFn func(art *wfv1.Artifact) string) string {
 	var lines []string
@@ -109,6 +112,10 @@ func buildManifest(tmpl *wfv1.Template, identityFn func(art *wfv1.Artifact) stri
 	// Template name scopes the key so two different templates with the same
 	// inputs don't collide in the cache.
 	lines = append(lines, "template:"+tmpl.Name)
+
+	// Executor spec — what the step actually runs. Changes to image, command,
+	// script body, etc. must bust the cache even when inputs are unchanged.
+	lines = append(lines, "executor:"+executorFingerprint(tmpl))
 
 	// Parameters — sorted by name for determinism.
 	// Values are length-prefixed ("param:<name>=<len>:<value>") to prevent
@@ -134,6 +141,86 @@ func buildManifest(tmpl *wfv1.Template, identityFn func(art *wfv1.Artifact) stri
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// containerLogicFields is a minimal representation of the fields that
+// determine what a container actually executes. Resource requests, scheduling
+// constraints, and other operational fields are intentionally excluded — they
+// don't affect the correctness of the result, so changing them should not bust
+// the cache.
+type containerLogicFields struct {
+	Image        string              `json:"image,omitempty"`
+	Command      []string            `json:"command,omitempty"`
+	Args         []string            `json:"args,omitempty"`
+	Env          []apiv1.EnvVar      `json:"env,omitempty"`
+	VolumeMounts []apiv1.VolumeMount `json:"volumeMounts,omitempty"`
+}
+
+// scriptLogicFields extends containerLogicFields with the script source body.
+type scriptLogicFields struct {
+	containerLogicFields
+	Source string `json:"source,omitempty"`
+}
+
+// executorFingerprint returns a stable hash of only the fields that determine
+// what the step computes. Operational fields (resource requests, nodeSelector,
+// affinity, tolerations, retryStrategy, metrics, synchronization, etc.) are
+// excluded so that tuning those does not bust the cache.
+//
+// For Container and Script templates the covered fields are:
+//
+//	image, command, args, env, volumeMounts (+ source for Script)
+//
+// For Resource, HTTP, Plugin, ContainerSet, DAG, Steps, and Data templates the
+// entire sub-struct is marshalled since there is no obvious smaller subset.
+func executorFingerprint(tmpl *wfv1.Template) string {
+	var payload any
+	switch {
+	case tmpl.Container != nil:
+		c := tmpl.Container
+		payload = containerLogicFields{
+			Image:        c.Image,
+			Command:      c.Command,
+			Args:         c.Args,
+			Env:          c.Env,
+			VolumeMounts: c.VolumeMounts,
+		}
+	case tmpl.Script != nil:
+		s := tmpl.Script
+		payload = scriptLogicFields{
+			containerLogicFields: containerLogicFields{
+				Image:        s.Image,
+				Command:      s.Command,
+				Args:         s.Args,
+				Env:          s.Env,
+				VolumeMounts: s.VolumeMounts,
+			},
+			Source: s.Source,
+		}
+	case tmpl.Resource != nil:
+		payload = tmpl.Resource
+	case tmpl.HTTP != nil:
+		payload = tmpl.HTTP
+	case tmpl.Plugin != nil:
+		payload = tmpl.Plugin
+	case tmpl.ContainerSet != nil:
+		payload = tmpl.ContainerSet
+	case tmpl.DAG != nil:
+		payload = tmpl.DAG
+	case tmpl.Steps != nil:
+		payload = tmpl.Steps
+	case tmpl.Data != nil:
+		payload = tmpl.Data
+	default:
+		return ""
+	}
+
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Sprintf("type:%T", payload)
+	}
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
 }
 
 // sortedParameterNames returns a copy of the parameters sorted by name.
