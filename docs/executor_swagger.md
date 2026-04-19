@@ -2191,8 +2191,8 @@ that the fieldset applies to.
 | Name | Type | Go type | Required | Default | Description | Example |
 |------|------|---------|:--------:| ------- |-------------|---------|
 | cache | [Cache](#cache)| `Cache` |  | |  |  |
-| key | string| `string` |  | | Key is the key to use as the caching key |  |
-| maxAge | string| `string` |  | | MaxAge is the maximum age (e.g. "180s", "24h") of an entry that is still considered valid. If an entry is older</br>than the MaxAge, it will be ignored. |  |
+| key | string| `string` |  | | Key is the key to use as the caching key. If not set, a deterministic key</br>is derived from the template name and all resolved input parameters and artifacts. </br>*Optional.*|  |
+| maxAge | string| `string` |  | | MaxAge is the maximum age (e.g. "180s", "24h") of an entry that is still considered valid. If an entry is older</br>than the MaxAge, it will be ignored. When omitted, entries are valid until removed by the GC (see CacheTTL). </br>*Optional.*|  |
 
 
 

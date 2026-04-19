@@ -2280,6 +2280,7 @@ Artifact indicates an artifact to place at a specified path
 |`artifactGC`|[`ArtifactGC`](#artifactgc)|ArtifactGC describes the strategy to use when to deleting an artifact from completed or deleted workflows|
 |`artifactory`|[`ArtifactoryArtifact`](#artifactoryartifact)|Artifactory contains artifactory artifact location details|
 |`azure`|[`AzureArtifact`](#azureartifact)|Azure contains Azure Storage artifact location details|
+|`checksum`|`string`|Checksum is the SHA-256 checksum of the artifact content, computed at save time. Format: "sha256:<hex>". Set on output artifacts; used as a stable identity for memoization cache keys.|
 |`deleted`|`boolean`|Has this been deleted?|
 |`from`|`string`|From allows an artifact to reference an artifact from a previous step|
 |`fromExpression`|`string`|FromExpression, if defined, is evaluated to specify the value for the artifact|
@@ -3101,9 +3102,9 @@ Memoize enables caching for the Outputs of the template.
 ### Fields
 | Field Name | Field Type | Description   |
 |:----------:|:----------:|---------------|
-|`cache`|[`Cache`](#cache)|Cache sets and configures the kind of cache|
-|`key`|`string`|Key is the key to use as the caching key|
-|`maxAge`|`string`|MaxAge is the maximum age (e.g. "180s", "24h") of an entry that is still considered valid. If an entry is older than the MaxAge, it will be ignored.|
+|`cache`|[`Cache`](#cache)|Cache sets and configures the kind of cache. When omitted and SQL memoization is configured on the controller, entries are stored in the SQL cache under the "default" bucket. When omitted and no SQL memoization is configured, the workflow will fail at runtime with an error.|
+|`key`|`string`|Key is the key to use as the caching key. If not set, a deterministic key is derived from the template name and all resolved input parameters and artifacts.|
+|`maxAge`|`string`|MaxAge is the maximum age (e.g. "180s", "24h") of an entry that is still considered valid. If an entry is older than the MaxAge, it will be ignored. When omitted, entries are valid until removed by the GC (see CacheTTL).|
 
 ## Plugin
 
@@ -4741,6 +4742,7 @@ ArtifactPaths expands a step from a collection of artifacts
 |`artifactGC`|[`ArtifactGC`](#artifactgc)|ArtifactGC describes the strategy to use when to deleting an artifact from completed or deleted workflows|
 |`artifactory`|[`ArtifactoryArtifact`](#artifactoryartifact)|Artifactory contains artifactory artifact location details|
 |`azure`|[`AzureArtifact`](#azureartifact)|Azure contains Azure Storage artifact location details|
+|`checksum`|`string`|Checksum is the SHA-256 checksum of the artifact content, computed at save time. Format: "sha256:<hex>". Set on output artifacts; used as a stable identity for memoization cache keys.|
 |`deleted`|`boolean`|Has this been deleted?|
 |`from`|`string`|From allows an artifact to reference an artifact from a previous step|
 |`fromExpression`|`string`|FromExpression, if defined, is evaluated to specify the value for the artifact|
