@@ -993,14 +993,21 @@ message MemoizationStatus {
 
 // Memoize enables caching for the Outputs of the template.
 message Memoize {
-  // Key is the key to use as the caching key
+  // Key is the key to use as the caching key. If not set, a deterministic key
+  // is derived from the template name and all resolved input parameters and artifacts.
+  // +optional
   optional string key = 1;
 
-  // Cache sets and configures the kind of cache
+  // Cache sets and configures the kind of cache. When omitted and SQL memoization is
+  // configured on the controller, entries are stored in the SQL cache under the "default"
+  // bucket. When omitted and no SQL memoization is configured, the workflow will fail at
+  // runtime with an error.
+  // +optional
   optional Cache cache = 2;
 
   // MaxAge is the maximum age (e.g. "180s", "24h") of an entry that is still considered valid. If an entry is older
-  // than the MaxAge, it will be ignored.
+  // than the MaxAge, it will be ignored. When omitted, entries are valid until removed by the GC (see CacheTTL).
+  // +optional
   optional string maxAge = 3;
 }
 

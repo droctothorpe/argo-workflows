@@ -470,17 +470,17 @@ func schema_pkg_apis_workflow_v1alpha1_Artifact(ref common.ReferenceCallback) co
 							Ref:         ref("github.com/argoproj/argo-workflows/v4/pkg/apis/workflow/v1alpha1.ArtifactGC"),
 						},
 					},
-					"checksum": {
-						SchemaProps: spec.SchemaProps{
-							Description: "Checksum is the SHA-256 checksum of the artifact content, computed at save time. Format: \"sha256:<hex>\". Set on output artifacts; used as a stable identity for memoization cache keys.",
-							Type:        []string{"string"},
-							Format:      "",
-						},
-					},
 					"deleted": {
 						SchemaProps: spec.SchemaProps{
 							Description: "Has this been deleted?",
 							Type:        []string{"boolean"},
+							Format:      "",
+						},
+					},
+					"checksum": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Checksum is the SHA-256 checksum of the artifact content, computed at save time. Format: \"sha256:<hex>\". Set on output artifacts; used as a stable identity for memoization cache keys.",
+							Type:        []string{"string"},
 							Format:      "",
 						},
 					},
@@ -860,6 +860,13 @@ func schema_pkg_apis_workflow_v1alpha1_ArtifactPaths(ref common.ReferenceCallbac
 						SchemaProps: spec.SchemaProps{
 							Description: "Has this been deleted?",
 							Type:        []string{"boolean"},
+							Format:      "",
+						},
+					},
+					"checksum": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Checksum is the SHA-256 checksum of the artifact content, computed at save time. Format: \"sha256:<hex>\". Set on output artifacts; used as a stable identity for memoization cache keys.",
+							Type:        []string{"string"},
 							Format:      "",
 						},
 					},
