@@ -496,11 +496,11 @@ func (azblobDriver *ArtifactDriver) GetETag(ctx context.Context, artifact *wfv1.
 	}
 	containerClient, err := azblobDriver.newAzureContainerClient(ctx)
 	if err != nil {
-		return "", fmt.Errorf("Azure GetETag: create client: %w", err)
+		return "", fmt.Errorf("azure GetETag: create client: %w", err)
 	}
 	props, err := containerClient.NewBlobClient(blobName).GetProperties(ctx, nil)
 	if err != nil {
-		return "", fmt.Errorf("Azure GetETag: get properties: %w", err)
+		return "", fmt.Errorf("azure GetETag: get properties: %w", err)
 	}
 	if props.ETag == nil {
 		return "", nil

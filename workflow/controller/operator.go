@@ -2232,6 +2232,7 @@ func (woc *wfOperationCtx) executeTemplate(ctx context.Context, nodeName string,
 			// Resolve effective cache name: use the user-supplied configMap name when set,
 			// otherwise fall back to the SQL backend with a "default" bucket.
 			var cacheName string
+			//nolint:gocritic
 			if processedTmpl.Memoize.Cache != nil {
 				cacheName = processedTmpl.Memoize.Cache.ConfigMap.Name
 			} else if woc.controller.memoSessionProxy != nil {

@@ -26,8 +26,8 @@ func hashManifest(manifest string) string {
 	return hex.EncodeToString(h[:])
 }
 
-func stubIdentity(identity string) func(art *wfv1.Artifact) string {
-	return func(art *wfv1.Artifact) string { return identity }
+func stubIdentity() func(art *wfv1.Artifact) string {
+	return func(art *wfv1.Artifact) string { return "" }
 }
 
 func TestBuildManifest_Deterministic(t *testing.T) {
@@ -39,8 +39,8 @@ func TestBuildManifest_Deterministic(t *testing.T) {
 		nil,
 	)
 
-	m1 := buildManifest(tmpl, stubIdentity(""))
-	m2 := buildManifest(tmpl, stubIdentity(""))
+	m1 := buildManifest(tmpl, stubIdentity())
+	m2 := buildManifest(tmpl, stubIdentity())
 	assert.Equal(t, m1, m2, "manifest should be deterministic across calls")
 }
 
@@ -54,7 +54,7 @@ func TestBuildManifest_ParametersSortedByName(t *testing.T) {
 		nil,
 	)
 
-	manifest := buildManifest(tmpl, stubIdentity(""))
+	manifest := buildManifest(tmpl, stubIdentity())
 	assert.Contains(t, manifest, "param:a=1:2\nparam:m=1:3\nparam:z=1:1")
 }
 
@@ -95,16 +95,16 @@ func TestBuildManifest_NewlineInjectionPrevented(t *testing.T) {
 		nil,
 	)
 
-	mA := buildManifest(tmplA, stubIdentity(""))
-	mB := buildManifest(tmplB, stubIdentity(""))
+	mA := buildManifest(tmplA, stubIdentity())
+	mB := buildManifest(tmplB, stubIdentity())
 	assert.NotEqual(t, mA, mB, "manifests with newline injection should differ due to length-prefixing")
 	assert.NotEqual(t, hashManifest(mA), hashManifest(mB))
 }
 
 func TestBuildManifest_DifferentTemplateNamesDiffer(t *testing.T) {
 	params := []wfv1.Parameter{{Name: "x", Value: wfv1.AnyStringPtr("v")}}
-	m1 := buildManifest(makeTemplate("tmpl-a", params, nil), stubIdentity(""))
-	m2 := buildManifest(makeTemplate("tmpl-b", params, nil), stubIdentity(""))
+	m1 := buildManifest(makeTemplate("tmpl-a", params, nil), stubIdentity())
+	m2 := buildManifest(makeTemplate("tmpl-b", params, nil), stubIdentity())
 	assert.NotEqual(t, m1, m2)
 }
 
@@ -118,20 +118,20 @@ func TestBuildManifest_NilValueParameter(t *testing.T) {
 		nil,
 	)
 
-	manifest := buildManifest(tmpl, stubIdentity(""))
+	manifest := buildManifest(tmpl, stubIdentity())
 	assert.Contains(t, manifest, "param:resolved=5:hello")
 	assert.Contains(t, manifest, "param:unresolved=0:")
 }
 
 func TestBuildManifest_VersionPrefix(t *testing.T) {
 	tmpl := makeTemplate("tmpl", nil, nil)
-	manifest := buildManifest(tmpl, stubIdentity(""))
+	manifest := buildManifest(tmpl, stubIdentity())
 	assert.True(t, len(manifest) >= 2 && manifest[:2] == "v1", "manifest should start with version prefix")
 }
 
 func TestBuildManifest_EmptyInputs(t *testing.T) {
 	tmpl := makeTemplate("tmpl", nil, nil)
-	manifest := buildManifest(tmpl, stubIdentity(""))
+	manifest := buildManifest(tmpl, stubIdentity())
 	assert.Equal(t, "v1\ntemplate:tmpl", manifest)
 }
 
@@ -142,7 +142,7 @@ func TestBuildManifest_DoesNotMutateInput(t *testing.T) {
 	}
 	tmpl := makeTemplate("tmpl", params, nil)
 
-	buildManifest(tmpl, stubIdentity(""))
+	buildManifest(tmpl, stubIdentity())
 
 	// Original order should be preserved.
 	require.Len(t, tmpl.Inputs.Parameters, 2)
