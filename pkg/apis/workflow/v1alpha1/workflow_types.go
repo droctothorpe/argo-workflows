@@ -1118,6 +1118,10 @@ type Artifact struct {
 
 	// Has this been deleted?
 	Deleted bool `json:"deleted,omitempty" protobuf:"varint,13,opt,name=deleted"`
+
+	// Checksum is the SHA-256 checksum of the artifact content, computed at save time.
+	// Format: "sha256:<hex>". Set on output artifacts; used as a stable identity for memoization cache keys.
+	Checksum string `json:"checksum,omitempty" protobuf:"bytes,14,opt,name=checksum"`
 }
 
 // GetArtifactGC returns the ArtifactGC that was defined by the artifact. If none was provided, a default value is returned.

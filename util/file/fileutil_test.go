@@ -178,3 +178,47 @@ func TestExists(t *testing.T) {
 	randFilePath := fmt.Sprintf("/%s", path)
 	assert.False(t, file.Exists(randFilePath))
 }
+
+func TestChecksumPath_File(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "artifact.tgz")
+	require.NoError(t, os.WriteFile(p, []byte("hello world"), 0o600))
+
+	sum, err := file.ChecksumPath(p)
+	require.NoError(t, err)
+	assert.Regexp(t, `^sha256:[0-9a-f]{64}$`, sum)
+
+	// Deterministic: same content → same checksum.
+	sum2, err := file.ChecksumPath(p)
+	require.NoError(t, err)
+	assert.Equal(t, sum, sum2)
+
+	// Different content → different checksum.
+	p2 := filepath.Join(dir, "other.tgz")
+	require.NoError(t, os.WriteFile(p2, []byte("different"), 0o600))
+	sum3, err := file.ChecksumPath(p2)
+	require.NoError(t, err)
+	assert.NotEqual(t, sum, sum3)
+}
+
+func TestChecksumPath_Directory(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("alpha"), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sub"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "sub", "b.txt"), []byte("beta"), 0o600))
+
+	sum, err := file.ChecksumPath(dir)
+	require.NoError(t, err)
+	assert.Regexp(t, `^sha256:[0-9a-f]{64}$`, sum)
+
+	// Deterministic across repeated calls.
+	sum2, err := file.ChecksumPath(dir)
+	require.NoError(t, err)
+	assert.Equal(t, sum, sum2)
+
+	// Modifying a file changes the checksum.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("changed"), 0o600))
+	sum3, err := file.ChecksumPath(dir)
+	require.NoError(t, err)
+	assert.NotEqual(t, sum, sum3)
+}

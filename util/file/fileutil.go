@@ -5,12 +5,15 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/klauspost/pgzip"
@@ -186,4 +189,69 @@ func IsDirectory(path string) (bool, error) {
 func Exists(path string) bool {
 	_, err := os.Stat(path)
 	return !os.IsNotExist(err)
+}
+
+// ChecksumPath returns a "sha256:<hex>" checksum of the content at path.
+// For a regular file the checksum is SHA-256 of the file bytes.
+// For a directory the checksum is SHA-256 of a deterministic manifest:
+// each entry is "<relpath>:<filehex>\n", sorted by relative path.
+func ChecksumPath(path string) (string, error) {
+	isDir, err := IsDirectory(path)
+	if err != nil {
+		return "", fmt.Errorf("checksum: stat %s: %w", path, err)
+	}
+	if isDir {
+		return checksumDir(path)
+	}
+	return checksumFile(path)
+}
+
+func checksumFile(path string) (string, error) {
+	f, err := os.Open(filepath.Clean(path))
+	if err != nil {
+		return "", fmt.Errorf("checksum: open %s: %w", path, err)
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", fmt.Errorf("checksum: read %s: %w", path, err)
+	}
+	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func checksumDir(root string) (string, error) {
+	type entry struct {
+		rel  string
+		hash string
+	}
+	var entries []entry
+	err := filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			return err
+		}
+		// Normalise path separator so checksums are consistent across OSes.
+		rel = filepath.ToSlash(rel)
+		hash, err := checksumFile(p)
+		if err != nil {
+			return err
+		}
+		entries = append(entries, entry{rel: rel, hash: hash})
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("checksum: walk %s: %w", root, err)
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].rel < entries[j].rel })
+	h := sha256.New()
+	for _, e := range entries {
+		fmt.Fprintf(h, "%s:%s\n", e.rel, e.hash)
+	}
+	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
 }

@@ -449,6 +449,12 @@ func (we *WorkflowExecutor) saveArtifact(ctx context.Context, containerName stri
 	if size == 0 {
 		logger.WithField("path", localArtPath).Warn(ctx, "The file is empty. It may not be uploaded successfully depending on the artifact driver")
 	}
+	checksum, err := file.ChecksumPath(localArtPath)
+	if err != nil {
+		logger.WithField("path", localArtPath).WithError(err).Warn(ctx, "Failed to compute artifact checksum; proceeding without it")
+	} else {
+		art.Checksum = checksum
+	}
 	err = we.saveArtifactFromFile(ctx, art, fileName, localArtPath)
 	return err == nil, err
 }
