@@ -189,10 +189,14 @@ func (woc *wfOperationCtx) executeSteps(ctx context.Context, nodeName string, tm
 
 	if node.MemoizationStatus != nil {
 		c := woc.controller.cacheFactory.GetCache(controllercache.ConfigMapCache, node.MemoizationStatus.CacheName)
-		err := c.Save(ctx, node.MemoizationStatus.Key, node.ID, node.Outputs)
-		if err != nil {
-			woc.log.WithFields(logging.Fields{"nodeID": node.ID}).WithError(err).Error(ctx, "Failed to save node outputs to cache")
-			node.Phase = wfv1.NodeError
+		if c == nil {
+			woc.log.WithFields(logging.Fields{"nodeID": node.ID}).Warn(ctx, "Memoization cache unavailable; skipping cache save")
+		} else {
+			err := c.Save(ctx, node.MemoizationStatus.Key, node.ID, node.Outputs)
+			if err != nil {
+				woc.log.WithFields(logging.Fields{"nodeID": node.ID}).WithError(err).Error(ctx, "Failed to save node outputs to cache")
+				node.Phase = wfv1.NodeError
+			}
 		}
 	}
 	return woc.markNodePhase(ctx, nodeName, wfv1.NodeSucceeded), nil

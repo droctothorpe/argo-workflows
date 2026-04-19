@@ -380,10 +380,14 @@ func (woc *wfOperationCtx) executeDAG(ctx context.Context, nodeName string, tmpl
 	}
 	if node.MemoizationStatus != nil {
 		c := woc.controller.cacheFactory.GetCache(controllercache.ConfigMapCache, node.MemoizationStatus.CacheName)
-		saveErr := c.Save(ctx, node.MemoizationStatus.Key, node.ID, node.Outputs)
-		if saveErr != nil {
-			woc.log.WithField("nodeID", node.ID).WithError(saveErr).Error(ctx, "Failed to save node outputs to cache")
-			node.Phase = wfv1.NodeError
+		if c == nil {
+			woc.log.WithField("nodeID", node.ID).Warn(ctx, "Memoization cache unavailable; skipping cache save")
+		} else {
+			saveErr := c.Save(ctx, node.MemoizationStatus.Key, node.ID, node.Outputs)
+			if saveErr != nil {
+				woc.log.WithField("nodeID", node.ID).WithError(saveErr).Error(ctx, "Failed to save node outputs to cache")
+				node.Phase = wfv1.NodeError
+			}
 		}
 	}
 

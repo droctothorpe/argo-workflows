@@ -155,9 +155,13 @@ func (woc *wfOperationCtx) reconcileTaskSet(ctx context.Context) error {
 			woc.wf.Status.Nodes.Set(ctx, nodeID, *node)
 			if node.MemoizationStatus != nil && node.Succeeded() {
 				c := woc.controller.cacheFactory.GetCache(controllercache.ConfigMapCache, node.MemoizationStatus.CacheName)
-				err := c.Save(ctx, node.MemoizationStatus.Key, node.ID, node.Outputs)
-				if err != nil {
-					woc.log.WithFields(logging.Fields{"nodeID": node.ID}).WithError(err).Error(ctx, "Failed to save node outputs to cache")
+				if c == nil {
+					woc.log.WithFields(logging.Fields{"nodeID": node.ID}).Warn(ctx, "Memoization cache unavailable; skipping cache save")
+				} else {
+					err := c.Save(ctx, node.MemoizationStatus.Key, node.ID, node.Outputs)
+					if err != nil {
+						woc.log.WithFields(logging.Fields{"nodeID": node.ID}).WithError(err).Error(ctx, "Failed to save node outputs to cache")
+					}
 				}
 			}
 			woc.updated = true
