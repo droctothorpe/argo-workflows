@@ -2229,10 +2229,22 @@ func (woc *wfOperationCtx) executeTemplate(ctx context.Context, nodeName string,
 	// Check memoization cache if the node is about to be created, or was created in the past but is only now allowed to run due to acquiring a lock
 	if processedTmpl.Memoize != nil {
 		if node == nil || unlockedNode {
-			memoizationCache := woc.controller.cacheFactory.GetCache(controllercache.ConfigMapCache, processedTmpl.Memoize.Cache.ConfigMap.Name)
+			// Resolve effective cache name: use the user-supplied configMap name when set,
+			// otherwise fall back to the SQL backend with a "default" bucket.
+			var cacheName string
+			if processedTmpl.Memoize.Cache != nil {
+				cacheName = processedTmpl.Memoize.Cache.ConfigMap.Name
+			} else if woc.controller.memoSessionProxy != nil {
+				cacheName = "default"
+			} else {
+				cacheErr := fmt.Errorf("memoize.cache not set and no SQL memoization is configured; set memoize.cache.configMap.name or configure memoization in the controller configmap")
+				return woc.initializeNodeOrMarkError(ctx, node, nodeName, templateScope, orgTmpl, opts.boundaryID, opts.nodeFlag, cacheErr), cacheErr
+			}
+
+			memoizationCache := woc.controller.cacheFactory.GetCache(controllercache.ConfigMapCache, cacheName)
 			if memoizationCache == nil {
 				cacheErr := fmt.Errorf("cache could not be found or created")
-				woc.log.WithFields(logging.Fields{"cacheName": processedTmpl.Memoize.Cache.ConfigMap.Name}).WithError(cacheErr)
+				woc.log.WithFields(logging.Fields{"cacheName": cacheName}).WithError(cacheErr)
 				errNode := woc.initializeNodeOrMarkError(ctx, node, nodeName, templateScope, orgTmpl, opts.boundaryID, opts.nodeFlag, cacheErr)
 				return errNode, cacheErr
 			}
@@ -2252,13 +2264,25 @@ func (woc *wfOperationCtx) executeTemplate(ctx context.Context, nodeName string,
 
 			hit := entry.Hit()
 			var outputs *wfv1.Outputs
+
+			// Resolve effective maxAge: template-level string overrides controller-level TTL default.
+			var maxAgeDuration time.Duration
+			var hasMaxAge bool
 			if processedTmpl.Memoize.MaxAge != "" {
-				maxAge, parseErr := time.ParseDuration(processedTmpl.Memoize.MaxAge)
+				d, parseErr := time.ParseDuration(processedTmpl.Memoize.MaxAge)
 				if parseErr != nil {
 					maxAgeErr := fmt.Errorf("invalid maxAge: %w", parseErr)
 					return woc.initializeNodeOrMarkError(ctx, node, nodeName, templateScope, orgTmpl, opts.boundaryID, opts.nodeFlag, maxAgeErr), maxAgeErr
 				}
-				maxAgeOutputs, ok := entry.GetOutputsWithMaxAge(maxAge)
+				maxAgeDuration = d
+				hasMaxAge = true
+			} else if woc.controller.Config.Memoization != nil && woc.controller.Config.Memoization.DefaultMaxAge != 0 {
+				maxAgeDuration = time.Duration(woc.controller.Config.Memoization.DefaultMaxAge)
+				hasMaxAge = true
+			}
+
+			if hasMaxAge {
+				maxAgeOutputs, ok := entry.GetOutputsWithMaxAge(maxAgeDuration)
 				if !ok {
 					// The outputs are expired, so this cache entry is not hit
 					hit = false
@@ -2271,7 +2295,7 @@ func (woc *wfOperationCtx) executeTemplate(ctx context.Context, nodeName string,
 			memoizationStatus := &wfv1.MemoizationStatus{
 				Hit:       hit,
 				Key:       effectiveKey,
-				CacheName: processedTmpl.Memoize.Cache.ConfigMap.Name,
+				CacheName: cacheName,
 			}
 			if hit {
 				if node == nil {
@@ -2818,10 +2842,14 @@ func (woc *wfOperationCtx) initializeExecutableNode(ctx context.Context, nodeNam
 
 	// Set the MemoizationStatus
 	if node.MemoizationStatus == nil && executeTmpl.Memoize != nil {
+		cacheName := ""
+		if executeTmpl.Memoize.Cache != nil {
+			cacheName = executeTmpl.Memoize.Cache.ConfigMap.Name
+		}
 		memoizationStatus := &wfv1.MemoizationStatus{
 			Hit:       false,
 			Key:       executeTmpl.Memoize.Key,
-			CacheName: executeTmpl.Memoize.Cache.ConfigMap.Name,
+			CacheName: cacheName,
 		}
 		node.MemoizationStatus = memoizationStatus
 	}

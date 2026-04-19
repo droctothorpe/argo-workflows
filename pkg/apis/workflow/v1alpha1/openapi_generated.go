@@ -3907,20 +3907,19 @@ func schema_pkg_apis_workflow_v1alpha1_Memoize(ref common.ReferenceCallback) com
 					},
 					"cache": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Cache sets and configures the kind of cache",
+							Description: "Cache sets and configures the kind of cache. When omitted and SQL memoization is configured on the controller, entries are stored under the \"default\" bucket.",
 							Ref:         ref("github.com/argoproj/argo-workflows/v4/pkg/apis/workflow/v1alpha1.Cache"),
 						},
 					},
 					"maxAge": {
 						SchemaProps: spec.SchemaProps{
-							Description: "MaxAge is the maximum age (e.g. \"180s\", \"24h\") of an entry that is still considered valid. If an entry is older than the MaxAge, it will be ignored.",
+							Description: "MaxAge is the maximum age (e.g. \"180s\", \"24h\") of an entry that is still considered valid. If an entry is older than the MaxAge, it will be ignored. When omitted, the controller's defaultMaxAge is used; if that is also unset entries never expire.",
 							Default:     "",
 							Type:        []string{"string"},
 							Format:      "",
 						},
 					},
 				},
-				Required: []string{"cache", "maxAge"},
 			},
 		},
 		Dependencies: []string{

@@ -4059,11 +4059,17 @@ type Memoize struct {
 	// is derived from the template name and all resolved input parameters and artifacts.
 	// +optional
 	Key string `json:"key,omitempty" protobuf:"bytes,1,opt,name=key"`
-	// Cache sets and configures the kind of cache
-	Cache *Cache `json:"cache" protobuf:"bytes,2,opt,name=cache"`
+	// Cache sets and configures the kind of cache. When omitted and SQL memoization is
+	// configured on the controller, entries are stored in the SQL cache under the "default"
+	// bucket. When omitted and no SQL memoization is configured, the workflow will fail at
+	// runtime with an error.
+	// +optional
+	Cache *Cache `json:"cache,omitempty" protobuf:"bytes,2,opt,name=cache"`
 	// MaxAge is the maximum age (e.g. "180s", "24h") of an entry that is still considered valid. If an entry is older
-	// than the MaxAge, it will be ignored.
-	MaxAge string `json:"maxAge" protobuf:"bytes,3,opt,name=maxAge"`
+	// than the MaxAge, it will be ignored. When omitted the controller's DefaultMemoizationMaxAge is used; if that is
+	// also unset entries never expire (they are only removed by GC).
+	// +optional
+	MaxAge string `json:"maxAge,omitempty" protobuf:"bytes,3,opt,name=maxAge"`
 }
 
 // MemoizationStatus is the status of this memoized node
