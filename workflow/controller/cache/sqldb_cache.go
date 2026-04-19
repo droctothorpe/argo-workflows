@@ -19,13 +19,17 @@ type sqlDBCache struct {
 	queries      *memodb.Queries
 }
 
-func newSQLDBCache(namespace, name string, sp *sqldb.SessionProxy, tableName string) MemoizationCache {
+func newSQLDBCache(namespace, name string, sp *sqldb.SessionProxy, tableName string) (MemoizationCache, error) {
+	queries, err := memodb.NewQueries(tableName, sp.DBType())
+	if err != nil {
+		return nil, err
+	}
 	return &sqlDBCache{
 		namespace:    namespace,
 		name:         name,
 		sessionProxy: sp,
-		queries:      memodb.NewQueries(tableName, sp.DBType()),
-	}
+		queries:      queries,
+	}, nil
 }
 
 func (c *sqlDBCache) Load(ctx context.Context, key string) (*Entry, error) {

@@ -757,7 +757,11 @@ func (wfc *WorkflowController) memoizationCacheGarbageCollector(ctx context.Cont
 	ticker := time.NewTicker(periodicity)
 	defer ticker.Stop()
 	cfg := memodb.ConfigFromConfig(memoCfg)
-	queries := memodb.NewQueries(cfg.TableName, wfc.memoSessionProxy.DBType())
+	queries, err := memodb.NewQueries(cfg.TableName, wfc.memoSessionProxy.DBType())
+	if err != nil {
+		logger.WithError(err).Error(ctx, "Invalid memoization cache table name; GC disabled")
+		return
+	}
 	for {
 		select {
 		case <-ctx.Done():

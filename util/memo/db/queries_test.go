@@ -149,7 +149,8 @@ func sampleOutputs(message string) *wfv1.Outputs {
 func TestQueriesSaveAndLoad(t *testing.T) {
 	ctx := logging.TestContext(t.Context())
 	sp := setupPostgres(ctx, t)
-	q := memodb.NewQueries(testTableName, sqldb.Postgres)
+	q, err := memodb.NewQueries(testTableName, sqldb.Postgres)
+	require.NoError(t, err)
 
 	// Load returns nil when no entry exists.
 	rec, err := q.Load(ctx, sp, testNamespace, testCacheName, "key1")
@@ -168,7 +169,8 @@ func TestQueriesSaveAndLoad(t *testing.T) {
 func TestQueriesNamespaceIsolation(t *testing.T) {
 	ctx := logging.TestContext(t.Context())
 	sp := setupPostgres(ctx, t)
-	q := memodb.NewQueries(testTableName, sqldb.Postgres)
+	q, err := memodb.NewQueries(testTableName, sqldb.Postgres)
+	require.NoError(t, err)
 
 	// Save the same cache_name+key in two different namespaces.
 	require.NoError(t, q.Save(ctx, sp, "ns-a", testCacheName, "shared-key", "node-a", sampleOutputs("from-a")))
@@ -191,7 +193,8 @@ func TestQueriesNamespaceIsolation(t *testing.T) {
 func TestQueriesLoadDebounceLastHitAt(t *testing.T) {
 	ctx := logging.TestContext(t.Context())
 	sp := setupPostgres(ctx, t)
-	q := memodb.NewQueries(testTableName, sqldb.Postgres)
+	q, err := memodb.NewQueries(testTableName, sqldb.Postgres)
+	require.NoError(t, err)
 
 	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "key2", "node-1", sampleOutputs("v1")))
 
@@ -224,7 +227,8 @@ func TestQueriesLoadDebounceLastHitAt(t *testing.T) {
 func TestQueriesSaveReplaces(t *testing.T) {
 	ctx := logging.TestContext(t.Context())
 	sp := setupPostgres(ctx, t)
-	q := memodb.NewQueries(testTableName, sqldb.Postgres)
+	q, err := memodb.NewQueries(testTableName, sqldb.Postgres)
+	require.NoError(t, err)
 
 	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "key3", "node-old", sampleOutputs("old")))
 	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "key3", "node-new", sampleOutputs("new")))
@@ -239,14 +243,15 @@ func TestQueriesSaveReplaces(t *testing.T) {
 func TestQueriesPruneRemovesOldEntries(t *testing.T) {
 	ctx := logging.TestContext(t.Context())
 	sp := setupPostgres(ctx, t)
-	q := memodb.NewQueries(testTableName, sqldb.Postgres)
+	q, err := memodb.NewQueries(testTableName, sqldb.Postgres)
+	require.NoError(t, err)
 
 	// Save two entries.
 	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "old-key", "node-old", sampleOutputs("old")))
 	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "new-key", "node-new", sampleOutputs("new")))
 
 	// Backdate old-key's last_hit_at to 10 days ago.
-	_, err := sp.Session().SQL().
+	_, err = sp.Session().SQL().
 		Exec(`UPDATE `+testTableName+` SET last_hit_at = ? WHERE "key" = 'old-key'`, time.Now().Add(-10*24*time.Hour))
 	require.NoError(t, err)
 
@@ -267,7 +272,8 @@ func TestQueriesPruneRemovesOldEntries(t *testing.T) {
 func TestQueriesPruneKeepsRecentEntries(t *testing.T) {
 	ctx := logging.TestContext(t.Context())
 	sp := setupPostgres(ctx, t)
-	q := memodb.NewQueries(testTableName, sqldb.Postgres)
+	q, err := memodb.NewQueries(testTableName, sqldb.Postgres)
+	require.NoError(t, err)
 
 	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "recent", "node-1", sampleOutputs("v1")))
 
@@ -282,7 +288,8 @@ func TestQueriesPruneKeepsRecentEntries(t *testing.T) {
 func TestMySQLSaveAndLoad(t *testing.T) {
 	ctx := logging.TestContext(t.Context())
 	sp := setupMySQL(ctx, t)
-	q := memodb.NewQueries(testTableName, sqldb.MySQL)
+	q, err := memodb.NewQueries(testTableName, sqldb.MySQL)
+	require.NoError(t, err)
 
 	rec, err := q.Load(ctx, sp, testNamespace, testCacheName, "key1")
 	require.NoError(t, err)
@@ -299,7 +306,8 @@ func TestMySQLSaveAndLoad(t *testing.T) {
 func TestMySQLSaveReplaces(t *testing.T) {
 	ctx := logging.TestContext(t.Context())
 	sp := setupMySQL(ctx, t)
-	q := memodb.NewQueries(testTableName, sqldb.MySQL)
+	q, err := memodb.NewQueries(testTableName, sqldb.MySQL)
+	require.NoError(t, err)
 
 	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "key3", "node-old", sampleOutputs("old")))
 	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "key3", "node-new", sampleOutputs("new")))
@@ -314,13 +322,14 @@ func TestMySQLSaveReplaces(t *testing.T) {
 func TestMySQLPruneRemovesOldEntries(t *testing.T) {
 	ctx := logging.TestContext(t.Context())
 	sp := setupMySQL(ctx, t)
-	q := memodb.NewQueries(testTableName, sqldb.MySQL)
+	q, err := memodb.NewQueries(testTableName, sqldb.MySQL)
+	require.NoError(t, err)
 
 	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "old-key", "node-old", sampleOutputs("old")))
 	require.NoError(t, q.Save(ctx, sp, testNamespace, testCacheName, "new-key", "node-new", sampleOutputs("new")))
 
 	// Backdate old-key's last_hit_at to 10 days ago.
-	_, err := sp.Session().SQL().
+	_, err = sp.Session().SQL().
 		Exec("UPDATE "+testTableName+" SET last_hit_at = ? WHERE `key` = 'old-key'", time.Now().Add(-10*24*time.Hour))
 	require.NoError(t, err)
 

@@ -30,8 +30,11 @@ type Queries struct {
 	dbType    sqldb.DBType
 }
 
-func NewQueries(tableName string, dbType sqldb.DBType) *Queries {
-	return &Queries{tableName: tableName, dbType: dbType}
+func NewQueries(tableName string, dbType sqldb.DBType) (*Queries, error) {
+	if !validTableName.MatchString(tableName) {
+		return nil, fmt.Errorf("invalid table name %q: must match [A-Za-z0-9_]+", tableName)
+	}
+	return &Queries{tableName: tableName, dbType: dbType}, nil
 }
 
 // lastHitAtUpdateInterval controls how often last_hit_at is refreshed on cache reads. Updates are

@@ -115,7 +115,11 @@ func (cf *cacheFactory) GetCache(ct Type, name string) MemoizationCache {
 	case ConfigMapCache:
 		var c MemoizationCache
 		if cf.sessionProxy != nil {
-			c = newSQLDBCache(cf.namespace, name, cf.sessionProxy, cf.tableName)
+			var err error
+			c, err = newSQLDBCache(cf.namespace, name, cf.sessionProxy, cf.tableName)
+			if err != nil {
+				return nil
+			}
 		} else {
 			c = NewConfigMapCache(cf.namespace, cf.kubeclient, name)
 		}

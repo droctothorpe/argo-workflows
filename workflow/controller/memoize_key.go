@@ -87,10 +87,9 @@ func memoizationKey(ctx context.Context, woc *wfOperationCtx, tmpl *wfv1.Templat
 // memoizationKey for testability.
 func buildMemoizationKey(ctx context.Context, tmpl *wfv1.Template, artifactIdentityFn artifactIdentityFunc) (string, error) {
 	manifest := buildManifest(tmpl, func(art *wfv1.Artifact) string {
-		identity, err := artifactIdentityFn(ctx, art)
-		if err != nil {
-			return art.Name
-		}
+		// resolveArtifactIdentity always returns a non-empty fallback (storage key or
+		// artifact name) even on error, so use the returned value unconditionally.
+		identity, _ := artifactIdentityFn(ctx, art)
 		return identity
 	})
 
