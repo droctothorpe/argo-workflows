@@ -1197,11 +1197,15 @@ func (woc *wfOperationCtx) podReconciliation(ctx context.Context) (bool, error) 
 				if newState.MemoizationStatus != nil {
 					if newState.Succeeded() {
 						c := woc.controller.cacheFactory.GetCache(controllercache.ConfigMapCache, newState.MemoizationStatus.CacheName)
-						err := c.Save(ctx, newState.MemoizationStatus.Key, newState.ID, newState.Outputs)
-						if err != nil {
-							woc.log.WithFields(logging.Fields{"nodeID": newState.ID}).WithError(err).Error(ctx, "Failed to save node outputs to cache")
-							newState.Phase = wfv1.NodeError
-							newState.Message = err.Error()
+						if c == nil {
+							woc.log.WithFields(logging.Fields{"nodeID": newState.ID}).Warn(ctx, "Memoization cache unavailable; skipping cache save")
+						} else {
+							err := c.Save(ctx, newState.MemoizationStatus.Key, newState.ID, newState.Outputs)
+							if err != nil {
+								woc.log.WithFields(logging.Fields{"nodeID": newState.ID}).WithError(err).Error(ctx, "Failed to save node outputs to cache")
+								newState.Phase = wfv1.NodeError
+								newState.Message = err.Error()
+							}
 						}
 					}
 				}
@@ -2244,66 +2248,65 @@ func (woc *wfOperationCtx) executeTemplate(ctx context.Context, nodeName string,
 
 			memoizationCache := woc.controller.cacheFactory.GetCache(controllercache.ConfigMapCache, cacheName)
 			if memoizationCache == nil {
-				cacheErr := fmt.Errorf("cache could not be found or created")
-				woc.log.WithFields(logging.Fields{"cacheName": cacheName}).WithError(cacheErr)
-				errNode := woc.initializeNodeOrMarkError(ctx, node, nodeName, templateScope, orgTmpl, opts.boundaryID, opts.nodeFlag, cacheErr)
-				return errNode, cacheErr
-			}
-
-			// Resolve the effective cache key: use the user-supplied key when set,
-			// otherwise derive a deterministic key from the template name and all
-			// resolved input parameters and artifacts.
-			effectiveKey, keyErr := memoizationKey(ctx, woc, processedTmpl)
-			if keyErr != nil {
-				return woc.initializeNodeOrMarkError(ctx, node, nodeName, templateScope, orgTmpl, opts.boundaryID, opts.nodeFlag, keyErr), keyErr
-			}
-
-			entry, loadErr := memoizationCache.Load(ctx, effectiveKey)
-			if loadErr != nil {
-				return woc.initializeNodeOrMarkError(ctx, node, nodeName, templateScope, orgTmpl, opts.boundaryID, opts.nodeFlag, loadErr), loadErr
-			}
-
-			hit := entry.Hit()
-			var outputs *wfv1.Outputs
-
-			if processedTmpl.Memoize.MaxAge != "" {
-				maxAge, parseErr := time.ParseDuration(processedTmpl.Memoize.MaxAge)
-				if parseErr != nil {
-					maxAgeErr := fmt.Errorf("invalid maxAge: %w", parseErr)
-					return woc.initializeNodeOrMarkError(ctx, node, nodeName, templateScope, orgTmpl, opts.boundaryID, opts.nodeFlag, maxAgeErr), maxAgeErr
-				}
-				maxAgeOutputs, ok := entry.GetOutputsWithMaxAge(maxAge)
-				if !ok {
-					// The outputs are expired, so this cache entry is not hit
-					hit = false
-				}
-				outputs = maxAgeOutputs
+				// SQL was configured but is currently unavailable; skip caching and proceed as a
+				// cache miss so the workflow is not blocked by a transient database failure.
+				woc.log.WithFields(logging.Fields{"cacheName": cacheName}).Warn(ctx, "Memoization cache unavailable (SQL backend may be down); proceeding without caching")
 			} else {
-				outputs = entry.GetOutputs()
-			}
+				// Resolve the effective cache key: use the user-supplied key when set,
+				// otherwise derive a deterministic key from the template name and all
+				// resolved input parameters and artifacts.
+				effectiveKey, keyErr := memoizationKey(ctx, woc, processedTmpl)
+				if keyErr != nil {
+					return woc.initializeNodeOrMarkError(ctx, node, nodeName, templateScope, orgTmpl, opts.boundaryID, opts.nodeFlag, keyErr), keyErr
+				}
 
-			memoizationStatus := &wfv1.MemoizationStatus{
-				Hit:       hit,
-				Key:       effectiveKey,
-				CacheName: cacheName,
-			}
-			if hit {
-				if node == nil {
-					_, node = woc.initializeCacheHitNode(ctx, nodeName, processedTmpl, templateScope, orgTmpl, opts.boundaryID, outputs, memoizationStatus, opts.nodeFlag)
-				} else {
-					woc.log.WithField("nodeName", nodeName).Info(ctx, "Node is using mutex with memoize. Cache is hit.")
-					woc.updateAsCacheHitNode(ctx, node, outputs, memoizationStatus)
+				entry, loadErr := memoizationCache.Load(ctx, effectiveKey)
+				if loadErr != nil {
+					return woc.initializeNodeOrMarkError(ctx, node, nodeName, templateScope, orgTmpl, opts.boundaryID, opts.nodeFlag, loadErr), loadErr
 				}
-			} else {
-				if node == nil {
-					_, node = woc.initializeCacheNode(ctx, nodeName, processedTmpl, templateScope, orgTmpl, opts.boundaryID, memoizationStatus, opts.nodeFlag)
+
+				hit := entry.Hit()
+				var outputs *wfv1.Outputs
+
+				if processedTmpl.Memoize.MaxAge != "" {
+					maxAge, parseErr := time.ParseDuration(processedTmpl.Memoize.MaxAge)
+					if parseErr != nil {
+						maxAgeErr := fmt.Errorf("invalid maxAge: %w", parseErr)
+						return woc.initializeNodeOrMarkError(ctx, node, nodeName, templateScope, orgTmpl, opts.boundaryID, opts.nodeFlag, maxAgeErr), maxAgeErr
+					}
+					maxAgeOutputs, ok := entry.GetOutputsWithMaxAge(maxAge)
+					if !ok {
+						// The outputs are expired, so this cache entry is not hit
+						hit = false
+					}
+					outputs = maxAgeOutputs
 				} else {
-					woc.log.WithField("nodeName", nodeName).Info(ctx, "Node is using mutex with memoize. Cache is NOT hit")
-					woc.updateAsCacheNode(ctx, node, memoizationStatus)
+					outputs = entry.GetOutputs()
 				}
+
+				memoizationStatus := &wfv1.MemoizationStatus{
+					Hit:       hit,
+					Key:       effectiveKey,
+					CacheName: cacheName,
+				}
+				if hit {
+					if node == nil {
+						_, node = woc.initializeCacheHitNode(ctx, nodeName, processedTmpl, templateScope, orgTmpl, opts.boundaryID, outputs, memoizationStatus, opts.nodeFlag)
+					} else {
+						woc.log.WithField("nodeName", nodeName).Info(ctx, "Node is using mutex with memoize. Cache is hit.")
+						woc.updateAsCacheHitNode(ctx, node, outputs, memoizationStatus)
+					}
+				} else {
+					if node == nil {
+						_, node = woc.initializeCacheNode(ctx, nodeName, processedTmpl, templateScope, orgTmpl, opts.boundaryID, memoizationStatus, opts.nodeFlag)
+					} else {
+						woc.log.WithField("nodeName", nodeName).Info(ctx, "Node is using mutex with memoize. Cache is NOT hit")
+						woc.updateAsCacheNode(ctx, node, memoizationStatus)
+					}
+				}
+				woc.wf.Status.Nodes.Set(ctx, node.ID, *node)
+				woc.updated = true
 			}
-			woc.wf.Status.Nodes.Set(ctx, node.ID, *node)
-			woc.updated = true
 		}
 	}
 

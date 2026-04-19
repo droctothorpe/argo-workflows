@@ -59,13 +59,19 @@ type cacheFactory struct {
 	lock         sync.RWMutex
 	sessionProxy *sqldb.SessionProxy
 	tableName    string
+	// sqlEnabled indicates that SQL caching was explicitly configured by the operator, even if
+	// the session proxy is currently unavailable. When true and sessionProxy is nil, GetCache
+	// returns nil rather than silently falling back to ConfigMap-based caching.
+	sqlEnabled bool
 }
 
 type Factory interface {
 	GetCache(ct Type, name string) MemoizationCache
-	// SetSessionProxy configures the factory to use database-backed caching. Calling this clears
+	// SetSessionProxy configures the factory's SQL backend. sqlEnabled indicates whether SQL
+	// caching is currently configured; when true with a nil sp (e.g. after a DB failure), GetCache
+	// returns nil rather than silently falling back to ConfigMap-based caching. Calling this clears
 	// any previously created cache instances so they are recreated against the new backend.
-	SetSessionProxy(sp *sqldb.SessionProxy, tableName string)
+	SetSessionProxy(sp *sqldb.SessionProxy, tableName string, sqlEnabled bool)
 }
 
 func NewCacheFactory(ki kubernetes.Interface, ns string) Factory {
@@ -84,13 +90,16 @@ const (
 	ConfigMapCache Type = "ConfigMapCache"
 )
 
-// SetSessionProxy configures the factory to use a database session for new caches, clearing any
-// previously cached instances.
-func (cf *cacheFactory) SetSessionProxy(sp *sqldb.SessionProxy, tableName string) {
+// SetSessionProxy configures the factory's SQL backend, clearing any previously cached instances.
+// sqlEnabled should be true whenever SQL memoization is configured by the operator, including when
+// the session proxy is unavailable (e.g. after a DB failure). When sqlEnabled is true but sp is
+// nil, GetCache returns nil rather than silently falling back to ConfigMap-based caching.
+func (cf *cacheFactory) SetSessionProxy(sp *sqldb.SessionProxy, tableName string, sqlEnabled bool) {
 	cf.lock.Lock()
 	defer cf.lock.Unlock()
 	cf.sessionProxy = sp
 	cf.tableName = tableName
+	cf.sqlEnabled = sqlEnabled
 	cf.caches = make(map[string]MemoizationCache)
 }
 
@@ -122,6 +131,11 @@ func (cf *cacheFactory) GetCache(ct Type, name string) MemoizationCache {
 				log.Printf("failed to create SQL memoization cache %q: %v", name, err)
 				return nil
 			}
+		} else if cf.sqlEnabled {
+			// SQL was explicitly configured but is currently unavailable. Return nil so callers
+			// can skip caching rather than silently redirecting to a ConfigMap backend.
+			log.Printf("SQL memoization cache %q requested but SQL backend is unavailable; skipping cache", name)
+			return nil
 		} else {
 			c = NewConfigMapCache(cf.namespace, cf.kubeclient, name)
 		}

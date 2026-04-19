@@ -83,26 +83,30 @@ func (wfc *WorkflowController) updateConfig(ctx context.Context) error {
 		logger.Info(ctx, "Memoization database configuration enabled")
 		if wfc.memoSessionProxy == nil {
 			sp := memodb.SessionProxyFromConfig(ctx, wfc.kubeclientset, wfc.namespace, memoCfg)
+			if sp == nil {
+				logger.Error(ctx, "Failed to connect to memoization database; SQL caching unavailable. Workflows using memoization will skip caching until the database is reachable.")
+				wfc.cacheFactory.SetSessionProxy(nil, "", true)
+			}
 			wfc.memoSessionProxy = sp
 		}
 		if wfc.memoSessionProxy != nil {
 			cfg := memodb.ConfigFromConfig(memoCfg)
 			if err := memodb.Migrate(ctx, wfc.memoSessionProxy, cfg); err != nil {
-				logger.WithError(err).Error(ctx, "Memoization db migration failed; falling back to ConfigMap-based caching")
+				logger.WithError(err).Error(ctx, "Memoization database migration failed; SQL caching unavailable. Workflows using memoization will skip caching until the database is healthy.")
 				wfc.memoSessionProxy.Close()
 				wfc.memoSessionProxy = nil
-				wfc.cacheFactory.SetSessionProxy(nil, "")
+				wfc.cacheFactory.SetSessionProxy(nil, "", true)
 			} else {
-				wfc.cacheFactory.SetSessionProxy(wfc.memoSessionProxy, cfg.TableName)
+				wfc.cacheFactory.SetSessionProxy(wfc.memoSessionProxy, cfg.TableName, true)
 			}
 		}
 	} else {
 		if wfc.memoSessionProxy != nil {
-			logger.Info(ctx, "Memoization database configuration removed; reverting to ConfigMap-based caching")
+			logger.Info(ctx, "Memoization database configuration removed")
 			wfc.memoSessionProxy.Close()
 			wfc.memoSessionProxy = nil
 		}
-		wfc.cacheFactory.SetSessionProxy(nil, "")
+		wfc.cacheFactory.SetSessionProxy(nil, "", false)
 		logger.Info(ctx, "Memoization database configuration disabled; using ConfigMap-based caching")
 	}
 
